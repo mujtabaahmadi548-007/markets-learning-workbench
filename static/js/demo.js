@@ -252,6 +252,12 @@
       topLineColor: "#16A34A", topFillColor1: "rgba(22,163,74,0.22)", topFillColor2: "rgba(22,163,74,0.02)",
       bottomLineColor: "#DC2626", bottomFillColor1: "rgba(220,38,38,0.02)", bottomFillColor2: "rgba(220,38,38,0.22)",
       lineWidth: 2, priceLineVisible: true, lastValueVisible: true,
+      // Keep the buy / invested / break-even line in view, so you always see where you started.
+      autoscaleInfoProvider: (orig) => {
+        const r = orig();
+        if (!r || !r.priceRange) return r;
+        return { priceRange: { minValue: Math.min(r.priceRange.minValue, base), maxValue: Math.max(r.priceRange.maxValue, base) }, margins: r.margins };
+      },
     });
     series.setData(pts);
     lines.push(series.createPriceLine({ price: base, color: "#64748B", lineWidth: 1, lineStyle: 2, axisLabelVisible: true,
@@ -274,7 +280,8 @@
   function liveChartUpdate(p, t, price) {
     if (!series || chartPos !== p || p.id !== selected) return;
     try { series.update({ time: Math.max(t, nowSec()), value: toY(p, t, price) }); } catch (e) { chartKey = ""; }
-    if (range() === "live") chart.timeScale().scrollToRealTime();
+    // Show the whole window (from the buy, or the last 15 minutes) instead of scrolling older points out of view.
+    if (range() === "live" || range() === "since") chart.timeScale().fitContent();
   }
 
   // ---------------------------------------------------------------- rendering

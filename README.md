@@ -123,6 +123,53 @@ restart, and open the address the start window shows. If Windows asks about the 
 
 ---
 
+## Website (phone and computer, anywhere)
+
+**https://mujtabaahmadi548-007.github.io/markets-learning-workbench/**
+
+GitHub builds the website from this repository with the same code and the same honesty rules
+(`build_site.py` run by `.github/workflows/site.yml`):
+
+- A build collects real prices, news, images and (with a Gemini key) AI breakdowns, then publishes the
+  pages. Each build starts the next one about 5 minutes after it ends, so the site is **rebuilt about every
+  10 minutes**; an hourly schedule restarts the chain if it ever stops. The database is carried from build to
+  build in the GitHub Actions cache (not in git).
+- **Crypto prices are live in your browser** (Binance stream). Stocks, metals, energy and macro show the
+  build's real quote with its real age and a DELAYED/STALE/MARKET CLOSED badge.
+- Your **learning progress and alerts are kept in your browser** (each device separately). Settings →
+  "Export progress" / "Import progress" copies them between devices.
+- Buttons that need the server (Fetch news now, make a breakdown, Why did it move?, Explain this term, make
+  quiz questions) only appear in the app on your PC. On the website these things happen automatically
+  in the builds: one breakdown about every 15 minutes, "why" for the top 3 movers, the 07:00 briefing,
+  new quiz questions.
+
+### API keys for the website (GitHub secrets)
+
+Keys are **never** in the repository. Add them on GitHub: repository **Settings → Secrets and variables →
+Actions → New repository secret**:
+
+| Secret name | Needed for |
+|---|---|
+| `GEMINI_API_KEY` | All AI on the website (without it: no breakdowns, briefing or new questions) |
+| `FINNHUB_API_KEY` | Live US stocks, gold/silver/oil (OANDA) and company news |
+| `TWELVE_DATA_API_KEY` | optional — official stock charts |
+| `COINGECKO_API_KEY` | optional — steadier crypto backup |
+
+Optional repository **variables** (same page, "Variables" tab): `SITE_GEMINI_DAILY_LIMIT` (default 150 —
+the website and the app on your PC share the same Gemini free quota), `SITE_AI_TASKS_PER_RUN` (default 2),
+`GEMINI_MODEL_FAST`, `GEMINI_MODEL_SMART`.
+
+### Build the website on your PC (for testing)
+
+```powershell
+$env:MLW_NO_DOTENV = "1"; $env:DATABASE_PATH = "$env:TEMP\mlw-site\markets.db"; python build_site.py --out "$env:TEMP\mlw-site\_site" --base /markets-learning-workbench --no-ai
+```
+
+`MLW_NO_DOTENV=1` keeps the test build from reading your `.env` (so it does not open a second Finnhub
+stream next to the running app).
+
+---
+
 ## API keys (all free plans)
 
 | `.env` line | Status here | Used for | How to get it |

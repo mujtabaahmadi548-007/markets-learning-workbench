@@ -97,7 +97,7 @@
   function badgeHtml(q) { if (!q) return ""; const b = M.badge(q); return `<span class="badge ${b.cls}" title="${M.esc(b.title)}">${M.esc(b.text)}</span>`; }
   function tabLabel(p) {
     const same = acct.open.filter((x) => x.sym === p.sym);
-    return same.length > 1 ? `${p.sym} #${same.length - same.indexOf(p)}` : p.sym;
+    return same.length > 1 ? `${p.sym} #${same.indexOf(p) + 1}` : p.sym; // numbered in the order they were opened
   }
 
   // ---------------------------------------------------------------- orders
@@ -199,7 +199,8 @@
     const out = { candles: cs, step, provider: d.provider, symbol: d.symbol, source: d.source, proxy: !!d.is_proxy, unofficial: !!d.is_unofficial,
       note: `Real ${d.source} ${d.symbol} ${TF_NAME[tf]} candles${extra}${d.is_unofficial ? ", unofficial source" : ""}.` +
         (M.isStatic ? " On the website they are refreshed with every update (about every 10 minutes)." : "") };
-    if (d.is_proxy) out.note = `PROXY: ${d.source} ${d.symbol} is a stand-in instrument (${d.note || "not the asset itself"}); its price differs from the price your trade uses, so your buy / take-profit / stop-loss lines are not drawn on it. Choose 1m for candles of the real price.`;
+    if (d.is_proxy) out.note = `PROXY: ${d.source} ${d.symbol} is a stand-in instrument (${d.note || "not the asset itself"}); its price differs from the price your trade uses, so your buy / take-profit / stop-loss lines are not drawn on it. Choose 1m for candles of the real price` +
+      (M.isStatic ? " (on the website this price updates about every 10 minutes, so those candles fill in slowly)." : ".");
     return out;
   }
   async function loadCandles(sym, tf) {

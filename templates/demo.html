@@ -5,123 +5,160 @@
   <div>
     <p class="eyebrow">Practice with pretend money</p>
     <h1>Demo investing</h1>
-    <p class="muted small">Buy and sell with up to <strong>$1,000,000,000</strong> of pretend money at <strong>real live prices</strong>.
-      Nothing here is real money, and nothing is advice. Your demo account is saved in this browser.</p>
+    <p class="muted small">Invest any pretend amount — up to <strong>$1,000,000,000</strong> per investment — at the <strong>real live price</strong>,
+      then watch it go up or down in real time. Nothing here is real money, and nothing is advice. Saved in this browser.</p>
   </div>
   <span class="chip chip-warn demo-flag">DEMO · not real money</span>
 </section>
 
 <div class="kpis" id="demo-kpis">
   <div class="kpi kpi-accent">
-    <span class="kpi-label">Account value</span>
-    <span class="kpi-value num" id="k-total">—</span>
-    <span class="kpi-sub" id="k-total-sub">—</span>
+    <span class="kpi-label">Value of open investments</span>
+    <span class="kpi-value num" id="k-value">$0.00</span>
+    <span class="kpi-sub" id="k-value-sub">no open investments</span>
   </div>
   <div class="kpi">
-    <span class="kpi-label">Cash</span>
-    <span class="kpi-value num" id="k-cash">—</span>
-    <span class="kpi-sub" id="k-cash-sub">—</span>
-  </div>
-  <div class="kpi">
-    <span class="kpi-label">Invested (market value)</span>
-    <span class="kpi-value num" id="k-inv">—</span>
+    <span class="kpi-label">Amount invested</span>
+    <span class="kpi-value num" id="k-inv">$0.00</span>
     <span class="kpi-sub" id="k-inv-sub">—</span>
   </div>
   <div class="kpi">
-    <span class="kpi-label">Profit / loss</span>
-    <span class="kpi-value num" id="k-pl">—</span>
-    <span class="kpi-sub" id="k-pl-sub">—</span>
+    <span class="kpi-label">Open profit / loss</span>
+    <span class="kpi-value num" id="k-open">$0.00</span>
+    <span class="kpi-sub" id="k-open-sub">—</span>
+  </div>
+  <div class="kpi">
+    <span class="kpi-label">Closed profit / loss</span>
+    <span class="kpi-value num" id="k-closed">$0.00</span>
+    <span class="kpi-sub" id="k-closed-sub">—</span>
   </div>
 </div>
 
-<section class="card" id="setup-card" hidden>
-  <h2>Start a demo account</h2>
-  <p class="small muted">Pick how much pretend cash to start with (from $1,000 up to $1,000,000,000).</p>
-  <div class="demo-presets" id="presets">
-    <button class="btn" type="button" data-amt="10000">$10K</button>
-    <button class="btn" type="button" data-amt="100000">$100K</button>
-    <button class="btn" type="button" data-amt="1000000">$1M</button>
-    <button class="btn" type="button" data-amt="100000000">$100M</button>
-    <button class="btn" type="button" data-amt="1000000000">$1B</button>
-  </div>
-  <form id="start-form" class="alert-form">
-    <label class="field">Starting cash (USD)
-      <input id="start-amt" type="text" inputmode="decimal" value="1,000,000" autocomplete="off" required></label>
-    <button class="btn btn-primary" type="submit">Start demo account</button>
-  </form>
-  <p class="small muted" id="start-hint"></p>
-</section>
-
-<div class="grid-2 demo-grid" id="trade-area" hidden>
-  <section class="card" aria-labelledby="order-h">
-    <h2 id="order-h">Place an order</h2>
+<div class="grid-2 demo-grid">
+  <section class="card" aria-labelledby="new-h">
+    <h2 id="new-h">New demo investment</h2>
     <form id="order" autocomplete="off">
-      <div class="seg" role="radiogroup" aria-label="Buy or sell">
-        <label><input type="radio" name="side" value="buy" checked> <span>Buy</span></label>
-        <label><input type="radio" name="side" value="sell"> <span>Sell</span></label>
-      </div>
       <label class="field">Asset
         <select id="o-sym" required><option value="">Waiting for prices…</option></select>
       </label>
       <div id="o-quote" class="demo-quote small muted">—</div>
-      <div class="seg seg-sm" role="radiogroup" aria-label="Order size in">
-        <label><input type="radio" name="mode" value="usd" checked> <span>Amount in USD</span></label>
-        <label><input type="radio" name="mode" value="qty"> <span>Quantity</span></label>
-      </div>
-      <label class="field"><span id="o-amt-label">Amount (USD)</span>
-        <span class="demo-amt-row">
-          <input id="o-amt" type="text" inputmode="decimal" placeholder="e.g. 50,000" required>
-          <button class="btn btn-sm" type="button" id="o-max">Max</button>
-        </span>
+      <label class="field">Amount to invest (USD, up to $1,000,000,000)
+        <input id="o-amt" type="text" inputmode="decimal" placeholder="e.g. 1,000,000 or 1m" required>
       </label>
-      <div class="demo-pcts" id="o-pcts">
-        <button class="btn btn-sm" type="button" data-pct="10">10%</button>
-        <button class="btn btn-sm" type="button" data-pct="25">25%</button>
-        <button class="btn btn-sm" type="button" data-pct="50">50%</button>
-        <button class="btn btn-sm" type="button" data-pct="100">100%</button>
+      <div class="demo-presets" id="o-presets">
+        <button class="btn btn-sm" type="button" data-amt="1000">$1K</button>
+        <button class="btn btn-sm" type="button" data-amt="10000">$10K</button>
+        <button class="btn btn-sm" type="button" data-amt="100000">$100K</button>
+        <button class="btn btn-sm" type="button" data-amt="1000000">$1M</button>
+        <button class="btn btn-sm" type="button" data-amt="10000000">$10M</button>
+        <button class="btn btn-sm" type="button" data-amt="100000000">$100M</button>
+        <button class="btn btn-sm" type="button" data-amt="1000000000">$1B</button>
       </div>
+      <details class="demo-more">
+        <summary>Optional: automatic take-profit / stop-loss</summary>
+        <div class="demo-tpsl">
+          <label class="field">Take profit at +% <input id="o-tp" type="number" min="0.1" step="any" inputmode="decimal" placeholder="e.g. 10"></label>
+          <label class="field">Stop loss at −% <input id="o-sl" type="number" min="0.1" max="99" step="any" inputmode="decimal" placeholder="e.g. 5"></label>
+        </div>
+        <p class="small muted">The investment closes by itself when the real price reaches the level (checked while this page is open).</p>
+      </details>
       <p class="demo-preview" id="o-preview" aria-live="polite">—</p>
-      <button class="btn btn-primary demo-submit" type="submit" id="o-submit" disabled>Place demo order</button>
+      <button class="btn btn-primary demo-submit" type="submit" id="o-submit" disabled>Invest (demo)</button>
     </form>
-    <p class="small muted">Orders fill at the latest real price shown, only while the price is
-      <strong>LIVE</strong> or <strong>DELAYED</strong> (a closed market cannot fill). No fees, spread or slippage —
-      real orders have all three, and a very large real order would move the price itself.
-      Crypto is priced in USDT, counted as 1 USD here. Indexes, yields and other daily values cannot be traded
-      (use SPY or QQQ for the stock market).</p>
   </section>
 
-  <section class="card" aria-labelledby="equity-h">
-    <h2 id="equity-h">Account value over time</h2>
-    <div id="equity-chart" class="demo-chart"><p class="muted small">Recorded from your first order on.</p></div>
-    <p class="small muted" id="equity-note">Recorded about every minute while this page is open, and at every order, using the same real prices.</p>
+  <section class="card" aria-labelledby="pos-h">
+    <h2 id="pos-h">Your open investments</h2>
+    <div id="pos-list" class="demo-pos-list"><p class="muted small">None yet. Invest in something on the left — for example $1M in Bitcoin.</p></div>
     <div class="demo-actions">
-      <button class="btn btn-sm" type="button" id="export">Export account</button>
-      <label class="btn btn-sm" for="import-file">Import account</label>
+      <button class="btn btn-sm" type="button" id="export">Export</button>
+      <label class="btn btn-sm" for="import-file">Import</label>
       <input type="file" id="import-file" accept="application/json" hidden>
-      <button class="btn btn-sm" type="button" id="reset">Reset / start over</button>
+      <button class="btn btn-sm" type="button" id="reset">Delete everything</button>
     </div>
   </section>
 </div>
 
-<section class="card" id="pos-card" hidden>
-  <h2>Your positions</h2>
-  <div class="table-wrap"><table class="table demo-table">
-    <thead><tr><th>Asset</th><th class="r">Quantity</th><th class="r">Avg. buy price</th><th class="r">Price now</th>
-      <th class="r">Market value</th><th class="r">Profit / loss</th><th class="r hide-sm">Weight</th><th></th></tr></thead>
-    <tbody id="pos-body"></tbody>
-  </table></div>
-  <p class="small muted">Values use the newest real price of each asset and its status. A position whose market is closed is valued at its last real price.</p>
+<section class="card demo-detail" id="detail" hidden aria-labelledby="d-title">
+  <div class="demo-detail-head">
+    <div>
+      <h2 id="d-title">—</h2>
+      <p class="small muted" id="d-sub">—</p>
+    </div>
+    <div class="demo-big">
+      <span class="demo-big-value num" id="d-value">—</span>
+      <span class="num" id="d-pl">—</span>
+    </div>
+  </div>
+
+  <div class="demo-toolbar">
+    <div class="seg seg-sm" role="radiogroup" aria-label="Chart time range" id="d-ranges">
+      <label><input type="radio" name="range" value="live" checked> <span>Live</span></label>
+      <label><input type="radio" name="range" value="since"> <span>Since buy</span></label>
+      <label><input type="radio" name="range" value="1D"> <span>1D</span></label>
+      <label><input type="radio" name="range" value="1W"> <span>1W</span></label>
+      <label><input type="radio" name="range" value="1M"> <span>1M</span></label>
+    </div>
+    <div class="seg seg-sm" role="radiogroup" aria-label="Chart shows" id="d-modes">
+      <label><input type="radio" name="cmode" value="value" checked> <span>Value $</span></label>
+      <label><input type="radio" name="cmode" value="pl"> <span>Profit / loss</span></label>
+      <label><input type="radio" name="cmode" value="price"> <span>Price</span></label>
+    </div>
+  </div>
+  <div id="d-chart" class="demo-chart"></div>
+  <p class="small muted" id="d-chart-note">—</p>
+
+  <div class="demo-stats" id="d-stats"></div>
+
+  <div class="demo-manage">
+    <div class="demo-manage-box">
+      <h3>Close</h3>
+      <div class="demo-presets">
+        <button class="btn btn-sm" type="button" data-close="0.25">Sell 25%</button>
+        <button class="btn btn-sm" type="button" data-close="0.5">Sell 50%</button>
+        <button class="btn btn-sm btn-danger" type="button" data-close="1">Close all</button>
+      </div>
+    </div>
+    <div class="demo-manage-box">
+      <h3>Add more</h3>
+      <form id="add-form" class="demo-inline">
+        <input id="add-amt" type="text" inputmode="decimal" placeholder="USD, e.g. 500k" aria-label="Amount to add in USD">
+        <button class="btn btn-sm" type="submit">Add</button>
+      </form>
+    </div>
+    <div class="demo-manage-box">
+      <h3>Take-profit / stop-loss</h3>
+      <form id="tpsl-form" class="demo-inline">
+        <input id="d-tp" type="number" step="any" min="0.1" placeholder="+% profit" aria-label="Take profit percent">
+        <input id="d-sl" type="number" step="any" min="0.1" max="99" placeholder="−% loss" aria-label="Stop loss percent">
+        <button class="btn btn-sm" type="submit">Set</button>
+      </form>
+      <p class="small muted" id="d-tpsl-now">—</p>
+    </div>
+  </div>
 </section>
 
-<section class="card" id="hist-card" hidden>
-  <h2>Order history</h2>
+<section class="card" id="closed-card" hidden>
+  <h2>Closed investments</h2>
   <div class="table-wrap"><table class="table demo-table">
-    <thead><tr><th>Time</th><th>Side</th><th>Asset</th><th class="r">Quantity</th><th class="r">Fill price</th><th class="r">Value (USD)</th>
-      <th class="r">Realized P/L</th><th class="hide-sm">Price source</th></tr></thead>
-    <tbody id="hist-body"></tbody>
+    <thead><tr><th>Closed</th><th>Asset</th><th class="r">Invested</th><th class="r">Buy price</th><th class="r">Sell price</th>
+      <th class="r">Got back</th><th class="r">Profit / loss</th><th class="hide-sm">Why</th></tr></thead>
+    <tbody id="closed-body"></tbody>
   </table></div>
+</section>
+
+<section class="card">
+  <h2>How the demo works</h2>
+  <ul class="small muted demo-rules">
+    <li>Every price is a real price from this app's sources (the same ones on the dashboard), shown with its status badge and source.</li>
+    <li>An investment opens or closes only while the price is <strong>LIVE</strong> or <strong>DELAYED</strong>. A closed market (for example US stocks at night or at the weekend) cannot fill; the page says when it opens.</li>
+    <li>No fees, spread or slippage are charged. Real trading has all three, and a real order of millions of dollars would itself move the price.</li>
+    <li>Crypto is priced in USDT, counted as 1 USD here. Indexes, yields and other daily-only values cannot be bought (use SPY or QQQ for the stock market).</li>
+    <li>The chart uses live prices recorded while this page is open plus the real candles the app already has for the asset (never a stand-in "proxy" instrument).</li>
+  </ul>
 </section>
 {% endblock %}
 {% block scripts %}
+<script src="{{ static_url('vendor/lightweight-charts.standalone.production.js') }}"></script>
 <script src="{{ static_url('js/demo.js') }}"></script>
 {% endblock %}

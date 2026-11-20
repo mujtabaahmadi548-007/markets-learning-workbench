@@ -30,7 +30,7 @@ from sqlalchemy import and_, delete, func, or_, select
 
 from app.ai.gemini_client import AIError, GeminiService
 from app.db.session import Database
-from app.models.tables import ArticleAsset, Breakdown, NewsArticle
+from app.models.tables import AppSetting, ArticleAsset, Breakdown, NewsArticle
 from app.net import USER_AGENT
 from app.providers import rss
 from app.services import tagger
@@ -92,7 +92,11 @@ class IngestStats:
     new: int = 0
     duplicates: int = 0
     skipped_irrelevant: int = 0
+    skipped_undated: int = 0
     errors: list[str] = field(default_factory=list)
+
+
+SEEN_FEEDS_KEY = "news_feeds_seen"
 
 
 TOPIC_BY_SYMBOL = {"XAU": "gold", "XAG": "silver", "WTI": "oil", "BRENT": "oil", "NATGAS": "gas", "BTC": "bitcoin",
@@ -205,8 +209,8 @@ class NewsService:
         if new_ids:
             await self._post_process(new_ids)
         self.last_run = utcnow()
-        log.info("News: %d items fetched, %d new, %d duplicates, %d off-topic skipped, %d feed errors",
-                 stats.fetched, stats.new, stats.duplicates, stats.skipped_irrelevant, len(stats.errors))
+        log.info("News: %d items fetched, %d new, %d duplicates, %d off-topic skipped, %d undated skipped, %d feed errors",
+                 stats.fetched, stats.new, stats.duplicates, stats.skipped_irrelevant, stats.skipped_undated, len(stats.errors))
         for cb in self.listeners:
             try:
                 cb(stats.new)
@@ -258,8 +262,16 @@ class NewsService:
         grown_clusters: set[int] = set()
         with self._lock, self.db.session() as s:
             known_urls = set()
+            # Feeds read before (remembered, or with stored articles). An item without a date in a feed's very first
+            # read has an unknown age (it may be weeks old), so it is skipped instead of being shown as new.
+            seen_row = s.get(AppSetting, SEEN_FEEDS_KEY)
+            seen_feeds = set(seen_row.value or []) if seen_row else set()
+            seen_feeds |= set(s.scalars(select(NewsArticle.source_feed).distinct()))
             for item, src in items:
                 if item.published_at and now - item.published_at > MAX_AGE:
+                    continue
+                if item.published_at is None and src.key not in seen_feeds:
+                    stats.skipped_undated += 1
                     continue
                 item.source_name = normalise_source(item.source_name)
                 if is_junk(item.title, item.source_name):
@@ -332,6 +344,11 @@ class NewsService:
             self._recent = [r for r in self._recent if (r.published or now) >= cutoff]
             for src_key in {src.key for _, src in items}:
                 self.status[src_key].new_last = 0
+            now_seen = sorted(seen_feeds | {src.key for _, src in items})
+            if seen_row is None:
+                s.add(AppSetting(key=SEEN_FEEDS_KEY, value=now_seen, updated_at=now))
+            elif sorted(seen_row.value or []) != now_seen:
+                seen_row.value, seen_row.updated_at = now_seen, now
         if new_ids:
             with self.db.session() as s:
                 for row in s.execute(select(NewsArticle.source_feed, func.count()).where(NewsArticle.id.in_(new_ids))

@@ -150,6 +150,25 @@ def test_store_dedups_and_groups_stories(tmp_path: Path) -> None:
     assert len(ids) == 3
 
 
+def test_undated_items_skipped_on_first_read_of_a_feed(tmp_path: Path) -> None:
+    svc = make_service(tmp_path)
+    svc._loaded = True
+    src = NewsSource("eia", "US EIA", "https://x")
+
+    def undated(title: str, url: str) -> rss.FeedItem:
+        return rss.FeedItem(title=title, url=url, description=None, published_at=None, source_name="US EIA")
+
+    first = [(undated("Hurricane shuts in Gulf of Mexico oil production", "https://eia.gov/1"), src),
+             (item("Gold rises as Treasury yields fall", "https://eia.gov/2", source="US EIA"), src)]
+    stats = IngestStats()
+    svc._store(first, {}, stats)
+    assert stats.new == 1 and stats.skipped_undated == 1  # age unknown on the first read -> not shown as new
+    # On a later read, an undated item that just appeared is new (its age is at most the time between reads).
+    stats2 = IngestStats()
+    svc._store([(undated("Natural gas storage rises more than expected", "https://eia.gov/3"), src)], {}, stats2)
+    assert stats2.new == 1 and stats2.skipped_undated == 0
+
+
 def test_importance_formula() -> None:
     assert base_importance(1.0, 5, 1.0, 3.0) == 100.0
     assert base_importance(0.5, 1, 0.0, 0.0) == 20.0

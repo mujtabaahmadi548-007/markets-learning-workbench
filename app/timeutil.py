@@ -26,11 +26,11 @@ def to_jakarta(dt: datetime) -> datetime:
 
 
 def fmt_jakarta(dt: datetime | None) -> str:
-    """e.g. '20 Nov 2026, 03:15 WIB'."""
+    """Jakarta time on a 12-hour clock, e.g. '20 Nov 2026, 3:15 AM'."""
     if dt is None:
         return "—"
     local = to_jakarta(dt)
-    return local.strftime("%d %b %Y, %H:%M WIB").lstrip("0")
+    return f"{local.day} {local:%b %Y}, {local.hour % 12 or 12}:{local:%M %p}"
 
 
 def fmt_utc(dt: datetime | None) -> str:

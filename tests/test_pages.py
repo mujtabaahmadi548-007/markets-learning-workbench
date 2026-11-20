@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from app.config import get_settings
 from app.main import create_app
 
-PAGES = ["/", "/news", "/learn", "/glossary", "/quiz", "/briefing", "/alerts", "/settings", "/health",
+PAGES = ["/", "/news", "/learn", "/glossary", "/quiz", "/briefing", "/alerts", "/demo", "/settings", "/health",
          "/asset/BTC", "/asset/XAU", "/asset/US10Y", "/glossary/inflation"]
 APIS = ["/api/quotes", "/api/news", "/api/news/sources", "/api/sparklines", "/api/providers", "/api/health",
         "/api/quiz/next?mode=today", "/api/quiz/next?mode=review", "/api/quiz/stats", "/api/alerts", "/api/calendar",

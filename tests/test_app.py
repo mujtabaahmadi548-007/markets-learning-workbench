@@ -47,7 +47,7 @@ def test_no_numbers_invented_on_dashboard() -> None:
 
 
 def test_jakarta_time_formatting() -> None:
-    assert fmt_jakarta(datetime(2026, 11, 19, 20, 15, tzinfo=timezone.utc)) == "20 Nov 2026, 03:15 WIB"
+    assert fmt_jakarta(datetime(2026, 11, 19, 20, 15, tzinfo=timezone.utc)) == "20 Nov 2026, 3:15 AM"
 
 
 def test_gemini_day_starts_midnight_pacific() -> None:

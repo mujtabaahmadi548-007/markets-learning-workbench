@@ -261,7 +261,7 @@
         }
         dispatch({ type: first ? "snapshot" : "quotes", quotes: first ? [...LIVE.quotes.values()] : out });
         if (first) { first = false; startStream(); }
-        if (!ws || ws.readyState !== 1) setConn("ok", "Website · updated " + new Date(d.built_at).toLocaleTimeString("en-GB", { timeZone: "Asia/Jakarta", hour: "2-digit", minute: "2-digit" }) + " WIB");
+        if (!ws || ws.readyState !== 1) setConn("ok", "Website · updated " + new Date(d.built_at).toLocaleTimeString("en-US", { timeZone: "Asia/Jakarta", hour: "numeric", minute: "2-digit", hour12: true }));
       } catch (e) { setConn("bad", "Could not load data"); }
     }
 

@@ -5,7 +5,7 @@
 <section class="page-head head-row">
   <div>
     <h1>Daily briefing</h1>
-    <p class="muted small">Made automatically every day at 07:00 Jakarta time{% if site.static %} (or at the next website update if today's is missing){% else %}, or now with the button{% endif %}.
+    <p class="muted small">Made automatically every day at 7:00 AM Jakarta time{% if site.static %} (or at the next website update if today's is missing){% else %}, or now with the button{% endif %}.
       {% if b %}This one: <time data-utc="{{ b.content.generated_at }}">{{ b.content.generated_at }}</time>.{% endif %}</p>
   </div>
   <div>
@@ -63,7 +63,7 @@
 </section>
 {% endif %}
 {% else %}
-<section class="card"><p class="muted">No briefing yet. {% if site.static %}The website makes one automatically at 07:00 Jakarta time.{% else %}Click "Make today's briefing now" (takes up to a minute).{% endif %}</p></section>
+<section class="card"><p class="muted">No briefing yet. {% if site.static %}The website makes one automatically at 7:00 AM Jakarta time.{% else %}Click "Make today's briefing now" (takes up to a minute).{% endif %}</p></section>
 {% endif %}
 
 <section class="card">

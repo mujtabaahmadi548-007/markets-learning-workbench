@@ -15,7 +15,8 @@ NAV = [
     {"href": "/", "label": "Dashboard", "stage": 0, "group": "Monitor"},
     {"href": "/news", "label": "News", "stage": 2},
     {"href": "/briefing", "label": "Briefing", "stage": 6},
-    {"href": "/alerts", "label": "Alerts", "stage": 6, "sep": True},
+    {"href": "/alerts", "label": "Alerts", "stage": 6},
+    {"href": "/demo", "label": "Demo invest", "stage": 6, "sep": True},
     {"href": "/learn", "label": "Learn", "stage": 5, "group": "Learn"},
     {"href": "/glossary", "label": "Glossary", "stage": 5},
     {"href": "/quiz", "label": "Quiz", "stage": 5, "sep": True},
@@ -27,6 +28,12 @@ CURRENT_STAGE = 7
 
 def _ctx(request: Request, page: str, **extra) -> dict:
     return {"nav": NAV, "current_stage": CURRENT_STAGE, "page": page, "version": APP_VERSION, **extra}
+
+
+@router.get("/demo", response_class=HTMLResponse)
+def demo_page(request: Request) -> HTMLResponse:
+    """Demo investing with pretend money at real prices (the account lives in the browser)."""
+    return templates.TemplateResponse(request, "demo.html", _ctx(request, "/demo"))
 
 
 @router.get("/", response_class=HTMLResponse)

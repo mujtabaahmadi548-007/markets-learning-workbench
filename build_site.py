@@ -251,7 +251,7 @@ def export(client, st, portal, out: Path) -> None:  # noqa: ANN001
     n = 0
     fixed = [("/", "index.html"), ("/news", "news/index.html"), ("/learn", "learn/index.html"), ("/glossary", "glossary/index.html"),
              ("/quiz", "quiz/index.html"), ("/briefing", "briefing/index.html"), ("/alerts", "alerts/index.html"),
-             ("/settings", "settings/index.html"), ("/health", "health/index.html"), ("/__missing__", "404.html")]
+             ("/demo", "demo/index.html"), ("/settings", "settings/index.html"), ("/health", "health/index.html"), ("/__missing__", "404.html")]
     for url, target in fixed:
         n += page(client, out, url, target)
     for a in assets:

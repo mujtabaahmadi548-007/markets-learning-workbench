@@ -36,6 +36,7 @@ Version 1.1 — all stages (0–7) built, plus the new design and article images
 | **Quiz** `/quiz` | Modes: Today's news, Concepts & lessons, Review (spaced repetition), Weak topics. Score history and weakest topics. |
 | **Briefing** `/briefing` | Daily at 07:00 Jakarta (or on demand): prices table, top 5 stories, 3-sentence "what to watch", calendar, 3 review questions. Past briefings are kept. |
 | **Alerts** `/alerts` | Price above / below / move of at least X %. Browser notifications + on-page message. |
+| **Demo invest** `/demo` | Practice account with **pretend money (from $1,000 up to $1,000,000,000)**. Buy and sell crypto, gold, silver, oil, gas, stocks and ETFs at the **real live price** (orders fill only while the price is LIVE or DELAYED; a closed market cannot fill). Account value, cash, positions with profit/loss, order history with the price source of every fill, and a value-over-time chart. No fees, spread or slippage (said on the page). Saved in your browser; export/import to move it. Not real money, not advice. |
 | **Settings** `/settings` | Watchlist (on/off, reorder, add a US stock/ETF or crypto coin), AI models, daily AI limit, automatic breakdowns per hour, news interval, LAN access, unofficial sources, key status. |
 | **Health** `/health` | Every data provider's status (with a switch to test fallback), news feeds, calendar, scheduled jobs, Gemini calls today vs limit, database size. |
 
@@ -57,7 +58,7 @@ Version 1.1 — all stages (0–7) built, plus the new design and article images
 - **Quizzes:** a second AI "checker" answers each question from the source text without the key; only
   questions where it agrees are kept.
 - **No mock data** in the running app. Fake data exists only in `tests/`.
-- Times are shown in **Jakarta time (WIB, UTC+7)**; hover any time to see UTC.
+- Times are shown in **Jakarta time (UTC+7) on a 12-hour clock** (e.g. 7:36 PM); hover any time to see UTC.
 
 ### Status badges
 

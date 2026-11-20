@@ -7,27 +7,24 @@
   const STATIC = !!window.MLW_STATIC;
   const BASE = window.MLW_BASE || "";
 
-  const JKT = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Asia/Jakarta", day: "numeric", month: "short", year: "numeric",
-    hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
-  });
-  const JKT_SHORT = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Asia/Jakarta", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
-  });
-  const JKT_TIME = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Jakarta", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
+  // All times are Jakarta time (UTC+7) on a 12-hour clock, e.g. "20 Nov 2026, 7:36:08 PM".
+  const JKT_DATE = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Jakarta", day: "numeric", month: "short", year: "numeric" });
+  const JKT_DM = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Jakarta", day: "numeric", month: "short" });
+  const JKT_WDM = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Jakarta", weekday: "short", day: "numeric", month: "short" });
+  const JKT_TIME = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Jakarta", hour: "numeric", minute: "2-digit", second: "2-digit", hour12: true });
+  const JKT_HM = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Jakarta", hour: "numeric", minute: "2-digit", hour12: true });
   const UTC_DATE = new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", day: "numeric", month: "short", year: "numeric" });
-  const JKT_DAY = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Jakarta", weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: false });
 
-  function formatJakarta(date) { return JKT.format(date).replace(/(\d{4}),? /, "$1, ") + " WIB"; }
+  function formatJakarta(date) { return JKT_DATE.format(date) + ", " + JKT_TIME.format(date); }
   function utcLabel(date) { return date.toISOString().replace("T", " ").replace(/\.\d+Z$/, " UTC"); }
 
-  // Short time for tables: today -> "03:15:09 WIB", other days -> "19 Nov, 03:15:09 WIB"
+  // Short time for tables: today -> "3:15:09 AM", other days -> "19 Nov, 3:15:09 AM"
   function shortJakarta(date) {
-    const today = JKT_SHORT.format(new Date()).slice(0, 6);
-    const s = JKT_SHORT.format(date);
-    return (s.slice(0, 6) === today ? JKT_TIME.format(date) : s.replace(",", "")) + " WIB";
+    const day = JKT_DM.format(date);
+    return (day === JKT_DM.format(new Date()) ? "" : day + ", ") + JKT_TIME.format(date);
   }
-  function dayJakarta(date) { return JKT_DAY.format(date).replace(",", "") + " WIB"; }
+  function dayJakarta(date) { return JKT_WDM.format(date).replace(",", "") + ", " + JKT_HM.format(date); }
+  function timeHM(date) { return JKT_HM.format(date); }
   function dateOnly(date) { return UTC_DATE.format(date); } // daily data: the date the value belongs to
 
   function renderTimes(root) {
@@ -274,7 +271,7 @@
     </article>`;
   }
 
-  window.MLW = { formatJakarta, utcLabel, shortJakarta, dayJakarta, dateOnly, renderTimes, fmtNum, fmtVolume, fmtPrice, unitOf,
+  window.MLW = { formatJakarta, utcLabel, shortJakarta, dayJakarta, timeHM, dateOnly, renderTimes, fmtNum, fmtVolume, fmtPrice, unitOf,
     fmtChange, fmtAge, badge, updatedText, sourceFlags, esc, onLive, serverNow, noteServerTime, toast, api, renderArticle,
     base: BASE, isStatic: STATIC };
 

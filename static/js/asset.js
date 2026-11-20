@@ -6,10 +6,11 @@
   let quote = null, chartData = null, range = "1D";
   let chart = null, series = null, volume = null;
 
-  const JKT_AXIS_TIME = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Jakarta", hour: "2-digit", minute: "2-digit", hour12: false });
+  const JKT_AXIS_TIME = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Jakarta", hour: "numeric", minute: "2-digit", hour12: true });
   const JKT_AXIS_DAY = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Jakarta", day: "numeric", month: "short" });
   const UTC_AXIS_DAY = new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", day: "numeric", month: "short", year: "2-digit" });
-  const JKT_FULL = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Jakarta", day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false });
+  const JKT_FULL_DATE = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Jakarta", day: "numeric", month: "short", year: "numeric" });
+  const JKT_FULL = { format: (d) => JKT_FULL_DATE.format(d) + ", " + JKT_AXIS_TIME.format(d) };
 
   // ---------------------------------------------------------------- chart
   function ensureChart() {
@@ -32,7 +33,7 @@
       localization: {
         timeFormatter: (t) => {
           const d = new Date(t * 1000);
-          return chartData && chartData.timeframe === "1d" ? UTC_AXIS_DAY.format(d) : JKT_FULL.format(d) + " WIB";
+          return chartData && chartData.timeframe === "1d" ? UTC_AXIS_DAY.format(d) : JKT_FULL.format(d);
         },
         priceFormatter: (p) => quote ? M.fmtNum(p, quote.decimals) : String(p),
       },
@@ -81,7 +82,7 @@
     drawChart(chartData);
     const tfName = { "5m": "5-minute", "1h": "1-hour", "1d": "daily" }[chartData.timeframe] || chartData.timeframe;
     cap.innerHTML = `Chart: <strong>${M.esc(chartData.source)}</strong> — ${M.esc(chartData.note || chartData.symbol)}. ` +
-      `${chartData.close_only ? "Daily closing values (line)" : tfName + " candles"}, ${chartData.candles.length} points. Times in WIB (UTC+7).`;
+      `${chartData.close_only ? "Daily closing values (line)" : tfName + " candles"}, ${chartData.candles.length} points. Times are Jakarta time (UTC+7).`;
     const notes = [];
     if (chartData.is_proxy) notes.push("PROXY: this chart shows a stand-in instrument, not the asset itself. It moves closely with it but can differ.");
     if (chartData.is_unofficial) notes.push("Unofficial source (Yahoo).");

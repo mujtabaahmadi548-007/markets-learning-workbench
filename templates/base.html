@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en" data-base="{{ site.base }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0A1C3A">
+  <title>{% block title %}Markets Learning Workbench{% endblock %}</title>
+  <link rel="icon" href="{{ static_url('img/logo.svg') }}" type="image/svg+xml">
+  <link rel="stylesheet" href="{{ static_url('css/app.css') }}">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Markets Learning Workbench, dashboard">
+      <span class="brand-mark"><img src="{{ static_url('img/logo.svg') }}" alt="" width="20" height="20"></span>
+      <span>Markets <span class="brand-sub">Workbench</span></span>
+    </a>
+    <nav class="nav" aria-label="Main">
+      {% for item in nav %}
+        {% if item.group %}<span class="nav-group">{{ item.group }}</span>{% endif %}
+        <a href="{{ item.href }}" class="{{ 'active' if page == item.href else '' }}">{{ item.label }}</a>
+        {% if item.sep %}<span class="nav-sep" aria-hidden="true"></span>{% endif %}
+      {% endfor %}
+    </nav>
+    <div class="conn" id="conn" role="status" aria-live="polite">
+      <span class="dot"></span><span class="conn-text">Connecting…</span>
+    </div>
+  </header>
+
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+
+  <div class="toasts" id="toasts" aria-live="assertive"></div>
+
+  <footer class="footer">
+    <strong>Educational tool — not financial advice.</strong>
+    <span>Times are shown in Jakarta time (WIB, UTC+7). Hover a time to see UTC.</span>
+    <span class="muted">v{{ version }}{% if site.static %} · website version, rebuilt about every 10 minutes{% endif %}</span>
+  </footer>
+  {% if site.static %}
+  <script>window.MLW_STATIC = true; window.MLW_BASE = {{ site.base | tojson }};</script>
+  <script src="{{ static_url('js/static-site.js') }}"></script>
+  {% endif %}
+  <script src="{{ static_url('js/common.js') }}"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

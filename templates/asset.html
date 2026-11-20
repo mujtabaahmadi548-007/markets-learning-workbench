@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}{{ asset.symbol }} · Markets Learning Workbench{% endblock %}
+{% block content %}
+<section class="page-head">
+  <p class="muted small"><a href="/">Dashboard</a> › {{ class_label }}</p>
+  <h1>{{ asset.name }} <span class="muted">{{ asset.symbol }}</span></h1>
+</section>
+
+<section class="card asset-hero" id="hero" data-symbol="{{ asset.symbol }}">
+  <div class="hero-price">
+    <span class="big num" id="price">—</span> <span class="unit" id="unit"></span>
+    <div class="num" id="change">—</div>
+  </div>
+  <div class="hero-meta">
+    <div><span class="badge badge-closed" id="badge">CONNECTING…</span></div>
+    <div class="small" id="source-line">Source: —</div>
+    <div class="small muted" id="session-line"></div>
+    <div class="small warn-text" id="error-line" hidden></div>
+  </div>
+</section>
+
+<section class="card">
+  <div class="chart-head">
+    <h2>Chart</h2>
+    <div class="range-buttons" role="group" aria-label="Chart range">
+      {% for r in ["1D", "1W", "1M", "6M", "1Y"] %}<button type="button" data-range="{{ r }}" {% if r == "1D" %}class="active" aria-pressed="true"{% else %}aria-pressed="false"{% endif %}>{{ r }}</button>{% endfor %}
+    </div>
+  </div>
+  <div id="chart" class="chart" aria-label="Price chart"></div>
+  <p class="small muted" id="chart-caption">Loading chart…</p>
+  <p class="small warn-text" id="chart-warning" hidden></p>
+</section>
+
+<div class="grid-2">
+  <section class="card">
+    <h2>Key numbers</h2>
+    <table class="table" id="stats"><tbody></tbody></table>
+    <p class="small muted">All numbers come from the source named above. "—" means the source does not provide it.</p>
+  </section>
+  <section class="card">
+    <h2>Price sources (in order)</h2>
+    <div class="table-wrap"><table class="table" id="sources"><thead><tr><th>#</th><th>Source</th><th>What it measures</th><th>State</th></tr></thead><tbody></tbody></table></div>
+    <p class="small muted">If a source fails, the next one takes over automatically. Test this on the <a href="/health">Health</a> page.</p>
+  </section>
+</div>
+
+<section class="card" id="why">
+  <div class="chart-head">
+    <h2>Why did it move today?</h2>
+    {% if ai_ready and not site.static %}<button class="btn" id="why-btn" type="button">Explain today's move</button>{% endif %}
+  </div>
+  <div id="why-box"><p class="small muted">{% if site.static %}On the website, explanations are made automatically for the biggest movers a few times a day. None for this asset yet.{% elif ai_ready %}Uses the real price change and the news tagged to {{ asset.symbol }} today. Every driver cites a stored article; if the news does not explain the move, it says so.{% else %}Needs GEMINI_API_KEY in .env.{% endif %}</p></div>
+</section>
+
+<div class="grid-2">
+  <section class="card">
+    <h2>News about {{ asset.symbol }} (last 3 days)</h2>
+    <div class="news-list" id="asset-news"><p class="muted small">Loading…</p></div>
+  </section>
+  <div>
+    <section class="card">
+      <h2>Concepts to know</h2>
+      {% if concepts %}
+      <ul class="concepts">{% for c in concepts %}<li><a href="/glossary/{{ c.slug }}">{{ c.name }}</a>{% if c.short %} — <span class="small">{{ c.short }}</span>{% endif %}</li>{% endfor %}</ul>
+      {% else %}<p class="muted small">See the <a href="/glossary">glossary</a>.</p>{% endif %}
+    </section>
+    <section class="card">
+      <h2>Set a price alert</h2>
+      <form id="alert-form" class="alert-form">
+        <label class="field">Condition
+          <select id="al-cond"><option value="above">Price rises to or above</option><option value="below">Price falls to or below</option><option value="pct_move">Moves at least (±%)</option></select></label>
+        <label class="field">Value <input id="al-val" type="number" step="any" required inputmode="decimal"></label>
+        <button class="btn" type="submit">Create</button>
+      </form>
+      <p class="small muted"><a href="/alerts">All alerts and browser notifications →</a></p>
+    </section>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ static_url('vendor/lightweight-charts.standalone.production.js') }}"></script>
+<script src="{{ static_url('js/asset.js') }}"></script>
+{% endblock %}

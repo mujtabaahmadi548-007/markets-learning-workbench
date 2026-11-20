@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block title %}Dashboard · Markets Learning Workbench{% endblock %}
+{% block content %}
+<section class="page-head head-row">
+  <div>
+    <p class="eyebrow">Monitor &amp; learn</p>
+    <h1>Markets today</h1>
+    <p class="muted"><time class="js-clock" data-utc="">—</time></p>
+  </div>
+  <div class="sessions" id="sessions" aria-label="Market sessions"></div>
+</section>
+
+<div class="kpis">
+  <a class="kpi kpi-accent" href="/briefing">
+    <span class="kpi-label">Daily briefing</span>
+    <span class="kpi-value">{{ "Ready" if briefing_today else "Not yet" }}</span>
+    <span class="kpi-sub">{{ "Made today" if briefing_today else "Made at 07:00 WIB" }} · open →</span>
+  </a>
+  <a class="kpi" href="/news">
+    <span class="kpi-label">News, last 24 h</span>
+    <span class="kpi-value num">{{ "{:,}".format(news_count) }}</span>
+    <span class="kpi-sub">{{ breakdown_count }} with AI breakdowns</span>
+  </a>
+  <a class="kpi" href="/alerts">
+    <span class="kpi-label">Price alerts</span>
+    <span class="kpi-value num" id="kpi-alerts">{{ alerts_active }}</span>
+    <span class="kpi-sub">active · manage →</span>
+  </a>
+  <a class="kpi" href="/quiz?mode=review">
+    <span class="kpi-label">Learning</span>
+    <span class="kpi-value num" id="kpi-learning">{{ stats.lessons_done }}/{{ stats.lessons_total }}</span>
+    <span class="kpi-sub" id="kpi-learning-sub">lessons done · {{ stats.due }} review{{ "" if stats.due == 1 else "s" }} due</span>
+  </a>
+</div>
+
+<div class="section-title"><h2>Monitor</h2><span class="line"></span></div>
+
+<div class="dash-top">
+  <section class="card" aria-labelledby="movers-h">
+    <h2 id="movers-h">Biggest movers</h2>
+    <p class="muted small">Crypto: over 24 hours; others: vs the previous close. "Why?" explains a move using real stored news.</p>
+    <div class="movers" id="movers"><p class="muted">Waiting for prices…</p></div>
+  </section>
+  <section class="card" aria-labelledby="events-h">
+    <h2 id="events-h">Coming up</h2>
+    {% if events %}
+    <ul class="events">{% for e in events %}<li class="{{ 'muted' if e.past else '' }}"><strong>{{ e.title }}</strong><br><span class="small muted"><time data-utc="{{ e.time }}">{{ e.time }}</time> · {{ e.source }}</span></li>{% endfor %}</ul>
+    {% else %}<p class="muted small">No scheduled US releases in the next 10 days.</p>{% endif %}
+    <p class="small"><a href="/briefing">Full calendar in the briefing →</a></p>
+  </section>
+</div>
+
+<section aria-labelledby="topnews-h" style="margin-bottom:18px">
+  <div class="chart-head" style="margin-bottom:12px"><h2 id="topnews-h">Top stories (last 24 hours)</h2><a class="small" href="/news">All news →</a></div>
+  <div class="news-grid" id="top-news"><p class="muted small">Loading…</p></div>
+</section>
+
+<section class="board" id="board" aria-live="off">
+  {% for cls in class_order %}
+  <div class="card board-group" data-class="{{ cls }}" hidden>
+    <h2>{{ class_labels[cls] }}</h2>
+    <div class="board-table" role="table" aria-label="{{ class_labels[cls] }} prices">
+      <div class="board-row board-head" role="row">
+        <span role="columnheader">Asset</span>
+        <span role="columnheader" class="r">Price</span>
+        <span role="columnheader" class="r">Change</span>
+        <span role="columnheader" class="r hide-sm">Day range</span>
+        <span role="columnheader" class="hide-sm">Chart</span>
+        <span role="columnheader">Status</span>
+        <span role="columnheader" class="hide-sm">Source · updated</span>
+      </div>
+      <div class="board-body" data-body="{{ cls }}"></div>
+    </div>
+  </div>
+  {% endfor %}
+</section>
+
+<div class="section-title"><h2>Learn</h2><span class="line"></span></div>
+
+<div class="grid-2">
+  <section class="card learn-panel">
+    <h2>Your progress</h2>
+    <div class="lp-row"><span>Lessons completed</span><span class="lp-big num" id="lp-lessons">{{ stats.lessons_done }} / {{ stats.lessons_total }}</span></div>
+    <div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="{{ stats.lessons_total }}" aria-valuenow="{{ stats.lessons_done }}">
+      <span id="lp-progress" style="width: {{ (100 * stats.lessons_done / stats.lessons_total) if stats.lessons_total else 0 }}%"></span></div>
+    <div class="lp-row"><span id="lp-answers-label">Quiz answers{% if stats.answered %} ({{ (100 * stats.correct / stats.answered) | round | int }}% correct){% endif %}</span><span class="lp-big num" id="lp-answers">{{ stats.answered }}</span></div>
+    <div class="lp-row"><span>Reviews due now</span><span><span class="lp-big num" id="lp-due">{{ stats.due }}</span> {% if stats.due or site.static %}<a class="btn btn-sm btn-primary" href="/quiz?mode=review">Review</a>{% endif %}</span></div>
+    {% if next_lesson %}
+    <div class="lp-row" id="lp-next"><span>Next lesson<br><a href="/learn/{{ next_lesson.id }}"><strong>{{ next_lesson.title }}</strong></a> <span class="small muted">· {{ next_lesson.path }}</span></span>
+      <a class="btn btn-sm btn-primary" href="/learn/{{ next_lesson.id }}">Start</a></div>
+    {% endif %}
+  </section>
+  <section class="card">
+    <h2>Concept to know today</h2>
+    {% if spotlight %}
+    <div class="spotlight">
+      <p style="margin:0"><a href="/glossary/{{ spotlight.slug }}"><strong>{{ spotlight.name }}</strong></a> <span class="chip">{{ spotlight.category }}</span></p>
+      <p class="small" style="margin:6px 0 0">{{ spotlight.short or "Open it to get a plain-English explanation with a real example from the news." }}</p>
+    </div>
+    {% endif %}
+    <p class="small" style="margin-top:14px"><a class="btn btn-sm" href="/quiz">Quiz on today's news</a> <a class="btn btn-sm" href="/glossary">Glossary</a> <a class="btn btn-sm" href="/learn">All learning paths</a></p>
+  </section>
+</div>
+
+<details class="card setup">
+  <summary><strong>Setup status</strong> <span class="muted">(API keys and AI models)</span></summary>
+  <table class="table">
+    <tbody>
+    {% for name, is_set in keys.items() %}
+      <tr><td><code>{{ name }}</code></td>
+          <td>{% if is_set %}<span class="pill ok">✔ Set</span>{% else %}<span class="pill missing">✖ Missing</span>{% endif %}</td></tr>
+    {% endfor %}
+      <tr><td>Fast model</td><td>{{ model_fast or "Not set" }}</td></tr>
+      <tr><td>Smart model</td><td>{{ model_smart or "Not set" }}</td></tr>
+    </tbody>
+  </table>
+  <p class="muted small">Keys live in <code>.env</code>; this page never shows them. Change models and limits on the <a href="/settings">Settings</a> page.</p>
+</details>
+{% endblock %}
+{% block scripts %}<script src="{{ static_url('js/dashboard.js') }}"></script>{% endblock %}

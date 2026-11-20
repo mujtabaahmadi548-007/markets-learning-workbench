@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Glossary · Markets Learning Workbench{% endblock %}
+{% block content %}
+<section class="page-head">
+  <h1>Glossary</h1>
+  <p class="muted">{{ concepts|length }} concepts. New ones are added automatically from AI breakdowns. Mastery comes from your quiz answers.</p>
+</section>
+<section class="card filters">
+  <input type="search" id="gq" placeholder="Search concepts…" aria-label="Search concepts">
+  <select id="gcat" aria-label="Category"><option value="">All categories</option>{% for c in categories %}<option>{{ c }}</option>{% endfor %}</select>
+  <select id="gseen" aria-label="Seen"><option value="">All</option><option value="seen">Seen</option><option value="unseen">Not seen yet</option></select>
+</section>
+<section class="card">
+  <div class="table-wrap">
+  <table class="table" id="gtable">
+    <thead><tr><th>Concept</th><th>Category</th><th>Definition</th><th class="r">Seen</th><th class="r">Mastery</th></tr></thead>
+    <tbody>
+    {% for c in concepts %}
+      <tr data-slug="{{ c.slug }}" data-name="{{ (c.name ~ ' ' ~ (c.short or '')) | lower }}" data-cat="{{ c.category }}" data-seen="{{ 'seen' if c.times_seen else 'unseen' }}">
+        <td><a href="/glossary/{{ c.slug }}"><strong>{{ c.name }}</strong></a></td>
+        <td class="small">{{ c.category }}</td>
+        <td class="small">{{ c.short or "—" }}</td>
+        <td class="r num">{{ c.times_seen }}</td>
+        <td class="r num">{% if c.mastery is not none and c.times_seen %}{{ (c.mastery * 100) | round | int }}%{% else %}—{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  const q = document.getElementById("gq"), cat = document.getElementById("gcat"), seen = document.getElementById("gseen");
+  function apply() {
+    const t = q.value.trim().toLowerCase();
+    document.querySelectorAll("#gtable tbody tr").forEach((tr) => {
+      const ok = (!t || tr.dataset.name.includes(t)) && (!cat.value || tr.dataset.cat === cat.value) && (!seen.value || tr.dataset.seen === seen.value);
+      tr.hidden = !ok;
+    });
+  }
+  [q, cat, seen].forEach((el) => el.addEventListener("input", apply));
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,27 @@
+# Secrets
+.env
+
+# Database (SQLite) and its side files, backups
+data/
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# Logs
+logs/
+*.log
+
+# Local tool config
+.claude/
+
+# Website build output and the build's own database (kept in the GitHub Actions cache, not in git)
+_site/
+site_db/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/

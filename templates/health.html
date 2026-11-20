@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}Health · Markets Learning Workbench{% endblock %}
+{% block content %}
+<section class="page-head">
+  <h1>Health</h1>
+  <p class="muted">Server time: <time data-utc="{{ h.server_time_utc }}">{{ h.server_time_utc }}</time></p>
+</section>
+
+<div class="grid-2">
+  <section class="card">
+    <h2>Gemini (AI)</h2>
+    <table class="table">
+      <tbody>
+        <tr><td>API key</td><td>{% if h.gemini.configured %}<span class="pill ok">✔ Set</span>{% else %}<span class="pill missing">✖ Missing</span>{% endif %}</td></tr>
+        <tr><td>Fast model</td><td>{{ h.gemini.model_fast or "Not set" }}</td></tr>
+        <tr><td>Smart model</td><td>{{ h.gemini.model_smart or "Not set" }}</td></tr>
+        <tr><td>Calls today</td><td class="num">{{ h.gemini.calls_today }} / {{ h.gemini.daily_limit }}</td></tr>
+        <tr><td>Daily count resets</td><td><time data-utc="{{ h.gemini.next_reset_utc }}">{{ h.gemini.next_reset_utc }}</time> <span class="muted">(midnight Pacific time, Google's quota day)</span></td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="card">
+    <h2>Database</h2>
+    <table class="table">
+      <tbody>
+        <tr><td>Size</td><td class="num">{{ "%.1f"|format(h.database_bytes / 1024) }} KB</td></tr>
+        <tr><td>Schema version</td><td class="num">{{ h.schema_version }}</td></tr>
+        <tr><td>LAN access</td><td>{{ "On (phone can connect)" if h.lan_access else "Off (this PC only)" }}</td></tr>
+        <tr><td>Unofficial sources</td><td>{{ "Allowed as last fallback" if h.allow_unofficial_sources else "Off" }}</td></tr>
+      </tbody>
+    </table>
+  </section>
+</div>
+
+<section class="card">
+  <h2>Data providers</h2>
+  <p class="muted small">"Switch off" makes the app stop using a source so you can watch the automatic fallback
+    (for example, switch off Binance and BTC moves to Gate.io within seconds). It stays off until you switch it on again.</p>
+  <div class="table-wrap">
+  <table class="table">
+    <thead><tr><th>Provider</th><th>Status</th><th>Used for</th><th>Stream</th><th>Last success</th><th>Last error</th><th>Errors</th><th>Message</th><th></th></tr></thead>
+    <tbody>
+    {% for p in h.providers %}
+      <tr>
+        <td>{{ p.label }}</td>
+        <td>{% if p.status == "OK" %}<span class="pill ok">✔ OK</span>{% elif p.status == "NOT_CONFIGURED" %}<span class="muted">No key</span>{% elif p.status in ("DOWN", "DEGRADED") %}<span class="pill missing">{{ p.status }}</span>{% elif p.status == "IDLE" %}<span class="muted">Standby</span>{% elif p.status == "DISABLED" %}<span class="pill missing">Switched off</span>{% else %}{{ p.status }}{% endif %}</td>
+        <td class="small">{{ p.assets_using|join(", ") or "—" }}</td>
+        <td class="small">{% if p.stream %}{{ "connected" if p.stream.connected else "not connected" }} ({{ p.stream.symbols }}){% else %}—{% endif %}</td>
+        <td class="small">{% if p.last_success %}<time data-utc="{{ p.last_success }}">{{ p.last_success }}</time>{% else %}—{% endif %}</td>
+        <td class="small">{% if p.last_error %}<time data-utc="{{ p.last_error }}">{{ p.last_error }}</time>{% else %}—{% endif %}</td>
+        <td class="num">{{ p.error_count }}</td>
+        <td class="small">{{ p.error_message or "" }}</td>
+        <td>{% if p.configured and not site.static %}<button class="btn js-toggle" data-provider="{{ p.provider }}" data-enable="{{ 'true' if p.manually_disabled else 'false' }}">{{ "Switch on" if p.manually_disabled else "Switch off" }}</button>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <p class="muted small">To check every source by hand, stop the app and run <code>python scripts\test_providers.py</code>.</p>
+</section>
+
+<section class="card">
+  <h2>News feeds</h2>
+  <p class="small muted">Last full fetch: {% if h.news_last_run %}<time data-utc="{{ h.news_last_run }}">{{ h.news_last_run }}</time>{% else %}not yet{% endif %}.
+    Google News searches run every 4th fetch; Finnhub company news every 6th.
+    Calendar: {% for k, v in h.calendar_status.items() %}{{ k }} {{ v }}{% if not loop.last %}, {% endif %}{% else %}not fetched yet{% endfor %}.</p>
+  <details>
+    <summary class="small">Show all {{ h.news_feeds|length }} feeds</summary>
+    <div class="table-wrap"><table class="table">
+      <thead><tr><th>Feed</th><th>Last OK</th><th class="r">Items</th><th class="r">New (last / total)</th><th>Error</th></tr></thead>
+      <tbody>
+      {% for f in h.news_feeds %}
+        <tr><td class="small">{{ f.name }} <span class="muted">{{ f.key }}</span></td>
+          <td class="small">{% if f.last_ok %}<time data-utc="{{ f.last_ok }}">{{ f.last_ok }}</time>{% else %}—{% endif %}</td>
+          <td class="r num">{{ f.items_last }}</td><td class="r num">{{ f.new_last }} / {{ f.new_total }}</td>
+          <td class="small {{ 'down' if f.error else '' }}">{{ f.error or "" }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+  </details>
+</section>
+
+<section class="card">
+  <h2>Scheduled jobs</h2>
+  {% if h.jobs %}
+  <table class="table">
+    <thead><tr><th>Job</th><th>Status</th><th>Last run</th><th>Runs</th><th>Error</th></tr></thead>
+    <tbody>
+    {% for j in h.jobs %}
+      <tr><td>{{ j.job }}</td><td>{{ j.last_status or "—" }}</td>
+      <td>{% if j.last_finished %}<time data-utc="{{ j.last_finished }}">{{ j.last_finished }}</time>{% else %}—{% endif %}</td>
+      <td class="num">{{ j.run_count }}</td><td>{{ j.last_error or "" }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No scheduled job has run yet.</p>
+  {% endif %}
+</section>
+{% endblock %}
+{% block scripts %}
+<script>
+  document.querySelectorAll(".js-toggle").forEach((b) => b.addEventListener("click", async () => {
+    b.disabled = true;
+    await fetch(`/api/providers/${b.dataset.provider}/enabled?enabled=${b.dataset.enable}`, { method: "POST" });
+    location.reload();
+  }));
+  if (!window.MLW_STATIC) setTimeout(() => location.reload(), 30000);
+</script>
+{% endblock %}

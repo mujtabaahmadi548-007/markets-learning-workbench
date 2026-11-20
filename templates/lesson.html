@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}{{ lesson.title }} · Learn{% endblock %}
+{% block content %}
+<section class="page-head">
+  <p class="eyebrow"><a href="/learn">Learn</a> · {{ lesson.path_title }}</p>
+  <h1>{{ lesson.title }}</h1>
+</section>
+<div class="article-hero" style="max-height:220px"><img src="/static/img/topics/{{ {'gold':'gold','oil':'oil','crypto':'bitcoin','stocks':'stocks','macro':'centralbank'}.get(lesson.path, 'markets') }}.svg" alt="" style="max-height:220px"><span class="illus-tag">illustration</span></div>
+<div class="lesson-grid">
+  <section class="card lesson-body" data-concepts='{{ lesson.concepts | map(attribute="slug") | list | tojson }}'>
+    {{ lesson.html | safe }}
+    <div class="lesson-actions">
+      <button class="btn" id="done" type="button" data-lesson-id="{{ lesson.id }}" data-done="{{ 'true' if lesson.done else 'false' }}">{{ "✔ Completed — mark as not done" if lesson.done else "Mark lesson as done" }}</button>
+      {% if not site.static %}<button class="btn" id="quiz" type="button">Quiz me on this lesson</button>{% else %}<a class="btn" href="/quiz?mode=concepts">Practise in the quiz</a>{% endif %}
+      {% if lesson.prev %}<a class="btn" href="/learn/{{ lesson.prev }}">← Previous</a>{% endif %}
+      {% if lesson.next %}<a class="btn" href="/learn/{{ lesson.next }}">Next →</a>{% endif %}
+    </div>
+  </section>
+  <aside>
+    <section class="card">
+      <h2>Live prices</h2>
+      {% if quotes %}
+      <table class="table"><tbody>
+        {% for q in quotes %}
+        <tr><td><a href="/asset/{{ q.symbol }}">{{ q.symbol }}</a></td>
+            <td class="r num">{% if q.price is not none %}{{ "{:,.{}f}".format(q.price, q.decimals) }}{% if q.currency == "%" %}%{% endif %}{% else %}—{% endif %}</td>
+            <td class="r num {{ 'up' if (q.change or 0) > 0 else ('down' if (q.change or 0) < 0 else '') }}">
+              {% if q.change_pct is not none %}{{ "▲ +" if q.change_pct > 0 else ("▼ " if q.change_pct < 0 else "■ ") }}{{ "{:.2f}".format(q.change_pct) }}%{% elif q.change is not none %}{{ "{:+.2f}".format(q.change) }} pp{% else %}—{% endif %}</td>
+            <td class="small muted">{{ q.status_label }}</td></tr>
+        {% endfor %}
+      </tbody></table>
+      <p class="small muted">From the sources shown on each asset page; refreshed when you reload.</p>
+      {% else %}<p class="muted small">No live prices for this lesson.</p>{% endif %}
+    </section>
+    <section class="card">
+      <h2>Concepts</h2>
+      <ul class="concepts">{% for c in lesson.concepts %}<li><a href="/glossary/{{ c.slug }}">{{ c.name }}</a>{% if c.short %} — <span class="small">{{ c.short }}</span>{% endif %}</li>{% endfor %}</ul>
+    </section>
+  </aside>
+</div>
+<section class="card">
+  <h2>Live examples from the news (last 3 days)</h2>
+  {% if examples %}
+  <div class="news-list compact-list">
+    {% for e in examples %}{{ m.news_row(e) }}{% endfor %}
+  </div>
+  <p class="small muted">Open one and use its breakdown to spot the mechanisms from this lesson.</p>
+  {% else %}<p class="muted small">No tagged news in the last 3 days yet. News arrives every few minutes.</p>{% endif %}
+</section>
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  const M = window.MLW;
+  const done = document.getElementById("done");
+  done.onclick = async () => {
+    const nowDone = done.dataset.done !== "true";
+    await M.api(`/api/lessons/{{ lesson.id }}/complete?done=${nowDone}`, { method: "POST" });
+    location.reload();
+  };
+  const quiz = document.getElementById("quiz");
+  if (quiz) quiz.onclick = async () => {
+    quiz.disabled = true; quiz.textContent = "Writing and checking questions… (30–60 s)";
+    try {
+      const r = await M.api("/api/quiz/generate", { method: "POST", body: { source_type: "lesson", source_id: "{{ lesson.id }}", n: 3 } });
+      M.toast(`${r.kept} question(s) ready.`);
+      if (r.kept) location.href = "/quiz?mode=concepts";
+    } catch (e) { M.toast("Quiz failed: " + M.esc(e.message), "toast-err"); }
+    quiz.disabled = false; quiz.textContent = "Quiz me on this lesson";
+  };
+})();
+</script>
+{% endblock %}

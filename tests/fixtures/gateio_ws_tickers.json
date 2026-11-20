@@ -1,0 +1,34 @@
+[
+ {
+  "time": 1795122025,
+  "time_ms": 1795122025459,
+  "conn_id": "fa5264f60d5e1400",
+  "trace_id": "7e5f51e97537462fe6a5e2f345738f18",
+  "channel": "spot.tickers",
+  "event": "subscribe",
+  "payload": [
+   "BTC_USDT"
+  ],
+  "result": {
+   "status": "success"
+  },
+  "requestId": "7e5f51e97537462fe6a5e2f345738f18"
+ },
+ {
+  "time": 1795122026,
+  "time_ms": 1795122026177,
+  "channel": "spot.tickers",
+  "event": "update",
+  "result": {
+   "currency_pair": "BTC_USDT",
+   "last": "62117.7",
+   "lowest_ask": "62117.8",
+   "highest_bid": "62117.7",
+   "change_percentage": "-0.7457",
+   "base_volume": "15165.405306",
+   "quote_volume": "956578688.5745455",
+   "high_24h": "64086.9",
+   "low_24h": "61763"
+  }
+ }
+]

@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}Alerts · Markets Learning Workbench{% endblock %}
+{% block content %}
+<section class="page-head">
+  <h1>Price alerts</h1>
+  <p class="muted small">{% if site.static %}On the website, alerts are saved and checked in this browser while a page of the site is open (crypto live, other assets with each update).{% else %}Alerts are checked on every price update while the app is running.{% endif %} They fire once, then switch off.
+    Only fresh prices (LIVE or DELAYED) can trigger them.</p>
+</section>
+
+<section class="card">
+  <h2>Browser notifications</h2>
+  <p class="small" id="perm-text"></p>
+  <button class="btn" id="perm" type="button">Allow notifications</button>
+  <p class="small muted">Alerts also appear as a message on any open page of this app.</p>
+</section>
+
+<section class="card">
+  <h2>New alert</h2>
+  <form id="new" class="alert-form">
+    <label class="field">Asset
+      <select id="a-sym" required>{% for a in assets %}<option value="{{ a.symbol }}">{{ a.symbol }} — {{ a.name }}</option>{% endfor %}</select>
+    </label>
+    <label class="field">Condition
+      <select id="a-cond">{% for k, v in conditions.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select>
+    </label>
+    <label class="field">Value <input id="a-val" type="number" step="any" required inputmode="decimal"></label>
+    <button class="btn" type="submit">Create alert</button>
+  </form>
+  <p class="small muted" id="a-hint"></p>
+</section>
+
+<section class="card">
+  <h2>Your alerts</h2>
+  {% if site.static %}<div id="alerts-list"><p class="muted">Loading…</p></div>
+  {% elif alerts %}
+  <div class="table-wrap"><table class="table">
+    <thead><tr><th>Asset</th><th>Condition</th><th class="r">Value</th><th>State</th><th></th></tr></thead>
+    <tbody>
+    {% for a in alerts %}
+      <tr><td><a href="/asset/{{ a.symbol }}">{{ a.symbol }}</a></td><td>{{ a.condition_text }}</td>
+        <td class="r num">{{ a.value }}{% if a.condition == "pct_move" %}%{% endif %}</td>
+        <td class="small">{% if a.active %}<span class="up">● active</span>{% else %}triggered <time data-utc="{{ a.triggered_at }}">{{ a.triggered_at }}</time> at {{ a.triggered_price }}{% endif %}</td>
+        <td><button class="btn js-del" data-id="{{ a.id }}" type="button">Delete</button></td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}<p class="muted">No alerts yet.</p>{% endif %}
+</section>
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  const M = window.MLW;
+  const permText = document.getElementById("perm-text"), perm = document.getElementById("perm");
+  function showPerm() {
+    if (!("Notification" in window)) { permText.textContent = "This browser does not support notifications."; perm.hidden = true; return; }
+    permText.textContent = { granted: "Notifications are allowed.", denied: "Notifications are blocked in this browser's site settings.",
+      default: "Notifications are not enabled yet." }[Notification.permission];
+    perm.hidden = Notification.permission !== "default";
+  }
+  perm.onclick = async () => { try { await Notification.requestPermission(); } catch (e) { /* ignore */ } showPerm(); };
+  showPerm();
+
+  const sym = document.getElementById("a-sym"), cond = document.getElementById("a-cond"), val = document.getElementById("a-val");
+  let quotes = {};
+  M.onLive((m) => { if (m.type === "snapshot" || m.type === "quotes") m.quotes.forEach((q) => { quotes[q.symbol] = q; }); hint(); });
+  function hint() {
+    const q = quotes[sym.value];
+    document.getElementById("a-hint").textContent = q && q.price !== null
+      ? `Current ${q.symbol}: ${M.fmtPrice(q)} ${M.unitOf(q)} (${q.status_label}, ${q.source})` +
+        (cond.value === "pct_move" ? `; change now: ${q.change_pct === null ? "not available" : M.fmtNum(q.change_pct, 2) + "%"}` : "")
+      : "";
+  }
+  sym.onchange = hint; cond.onchange = hint;
+  document.getElementById("new").onsubmit = async (ev) => {
+    ev.preventDefault();
+    try { await M.api("/api/alerts", { method: "POST", body: { symbol: sym.value, condition: cond.value, value: Number(val.value) } }); location.reload(); }
+    catch (e) { M.toast("Could not create: " + M.esc(e.message), "toast-err"); }
+  };
+  document.querySelectorAll(".js-del").forEach((b) => b.onclick = async () => {
+    await M.api(`/api/alerts/${b.dataset.id}`, { method: "DELETE" }); location.reload();
+  });
+})();
+</script>
+{% endblock %}

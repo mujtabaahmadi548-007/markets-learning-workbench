@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Quiz · Markets Learning Workbench{% endblock %}
+{% block content %}
+<section class="page-head">
+  <h1>Quiz</h1>
+  <p class="muted" id="quiz-stats">Answered {{ stats.answered }} · correct {{ stats.correct }}{% if stats.answered %} ({{ (100 * stats.correct / stats.answered) | round | int }}%){% endif %}
+    · {{ stats.due }} due for review · {{ stats.questions }} questions stored</p>
+</section>
+
+<div class="mode-tabs" role="tablist" aria-label="Quiz mode">
+  <button role="tab" data-mode="today">Today's news</button>
+  <button role="tab" data-mode="concepts">Concepts &amp; lessons</button>
+  <button role="tab" data-mode="review">Review (due{% if stats.due %}: {{ stats.due }}{% endif %})</button>
+  <button role="tab" data-mode="weak">Weak topics</button>
+</div>
+
+<section class="card" id="quiz-box" aria-live="polite"><p class="muted">Loading…</p></section>
+
+{% if not site.static %}<section class="card" id="make-more">
+  <h2>Make questions from today's top stories</h2>
+  {% if ai_ready %}
+  <p class="small muted">Each set takes 30–60 seconds and uses 2–3 AI calls. A checker keeps only questions the article text supports.</p>
+  <ul class="gen-list">
+    {% for t in top %}
+    <li><button class="btn js-gen" data-id="{{ t.id }}" type="button">Quiz me</button> <a href="/news/{{ t.id }}">{{ t.title }}</a> <span class="small muted">{{ t.source_name }}</span></li>
+    {% else %}<li class="muted">No stories stored yet.</li>{% endfor %}
+  </ul>
+  {% else %}<p class="muted small">Needs GEMINI_API_KEY.</p>{% endif %}
+</section>{% else %}<section class="card"><p class="small muted" style="margin:0">On the website, new questions are written automatically from top stories and lessons several times a day. Your answers and review schedule are saved in this browser.</p></section>{% endif %}
+
+<div class="grid-2">
+  <section class="card">
+    <h2>Score history (last 14 days)</h2>
+    <div id="quiz-history">{% if stats.history %}
+    <div class="history">
+      {% for h in stats.history %}
+      <div class="hist-row"><span class="small">{{ h.date[5:] }}</span>
+        <span class="hist-bar" title="{{ h.correct }} of {{ h.answered }} correct"><span style="width: {{ (100 * h.correct / h.answered) | round | int }}%"></span></span>
+        <span class="small num">{{ h.correct }}/{{ h.answered }}</span></div>
+      {% endfor %}
+    </div>
+    {% else %}<p class="muted small">No answers yet.</p>{% endif %}</div>
+  </section>
+  <section class="card">
+    <h2>Weakest topics</h2>
+    <div id="quiz-weak">{% if stats.weak %}
+    <table class="table"><tbody>
+      {% for w in stats.weak %}<tr><td><a href="/glossary/{{ w.slug }}">{{ w.name }}</a></td><td class="r num">{{ (w.accuracy * 100) | round | int }}%</td><td class="r small muted">{{ w.attempts }} answers</td></tr>{% endfor %}
+    </tbody></table>
+    {% else %}<p class="muted small">Answer at least two questions on a concept to see it here.</p>{% endif %}</div>
+  </section>
+</div>
+{% endblock %}
+{% block scripts %}<script src="{{ static_url('js/quiz.js') }}"></script>{% endblock %}

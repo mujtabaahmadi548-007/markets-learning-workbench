@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}News · Markets Learning Workbench{% endblock %}
+{% block content %}
+<section class="page-head head-row">
+  <div>
+    <h1>News</h1>
+    <p class="muted small">Real articles from verified news feeds. Every item links to the original article.
+      Tags show which assets an article is about.
+      <span id="news-status"></span></p>
+  </div>
+  {% if not site.static %}<button class="btn" id="refresh" type="button">Fetch news now</button>{% endif %}
+</section>
+
+<section class="card filters" aria-label="Filters">
+  <input type="search" id="q" placeholder="Search headlines…" aria-label="Search headlines">
+  <select id="symbol" aria-label="Asset">
+    <option value="">All assets</option>
+    {% for a in assets %}<option value="{{ a.symbol }}">{{ a.symbol }} — {{ a.name }}</option>{% endfor %}
+  </select>
+  <select id="asset_class" aria-label="Asset class">
+    <option value="">All classes</option>
+    {% for k, v in class_labels.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}
+  </select>
+  <select id="source" aria-label="Source"><option value="">All sources</option></select>
+  <select id="hours" aria-label="Time window">
+    <option value="6">Last 6 hours</option><option value="24" selected>Last 24 hours</option>
+    <option value="72">Last 3 days</option><option value="168">Last 7 days</option><option value="0">Everything stored</option>
+  </select>
+  <select id="has_breakdown" aria-label="Breakdown">
+    <option value="">With or without breakdown</option><option value="yes">Has AI breakdown</option><option value="no">No breakdown yet</option>
+  </select>
+  <select id="sort" aria-label="Sort">
+    <option value="latest">Newest first</option><option value="important">Most important</option>
+  </select>
+</section>
+
+<div id="new-pill" class="new-pill" hidden><button type="button" class="btn">New articles arrived — show them</button></div>
+<section class="news-list" id="list" aria-live="polite"><p class="muted">Loading…</p></section>
+{% endblock %}
+{% block scripts %}<script src="{{ static_url('js/news.js') }}"></script>{% endblock %}

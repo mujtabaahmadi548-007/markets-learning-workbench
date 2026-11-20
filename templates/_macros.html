@@ -1,0 +1,25 @@
+{# Shared bits for server-rendered pages. #}
+
+{# Article image: the publisher's own image, or a labelled topic illustration. #}
+{% macro thumb(e, cls="thumb") -%}
+<a class="{{ cls }}" href="/news/{{ e.id }}" tabindex="-1" aria-hidden="true">
+  {%- if e.image_url -%}
+  <img src="{{ e.image_url }}" alt="" loading="lazy" referrerpolicy="no-referrer" data-fallback="/static/img/topics/{{ e.topic or 'markets' }}.svg">
+  {%- else -%}
+  <img src="/static/img/topics/{{ e.topic or 'markets' }}.svg" alt="" loading="lazy"><span class="illus-tag">illustration</span>
+  {%- endif -%}
+</a>
+{%- endmacro %}
+
+{# Compact news row with image. #}
+{% macro news_row(e) -%}
+<article class="news-item compact">
+  {{ thumb(e) }}
+  <div class="news-main">
+    <a class="news-title" href="/news/{{ e.id }}">{{ e.title }}</a>
+    <div class="small news-meta"><strong>{{ e.source_name }}</strong>{% if e.published_at %} · <time data-utc="{{ e.published_at }}">{{ e.published_at }}</time>{% endif %}
+      · <a href="{{ e.url }}" target="_blank" rel="noopener noreferrer">Original ↗</a>
+      {% if e.has_breakdown %}<a class="chip chip-ok" href="/news/{{ e.id }}">AI breakdown</a>{% endif %}</div>
+  </div>
+</article>
+{%- endmacro %}

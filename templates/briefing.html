@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}Briefing · Markets Learning Workbench{% endblock %}
+{% block content %}
+<section class="page-head head-row">
+  <div>
+    <h1>Daily briefing</h1>
+    <p class="muted small">Made automatically every day at 07:00 Jakarta time, or now with the button.
+      {% if b %}This one: <time data-utc="{{ b.content.generated_at }}">{{ b.content.generated_at }}</time>.{% endif %}</p>
+  </div>
+  <div>
+    {% if not site.static %}<button class="btn" id="gen" type="button">Make today's briefing now</button>{% endif %}
+    {% if dates %}
+    <select id="past" aria-label="Past briefings">{% for d in dates %}<option value="{{ d }}" {% if b and b.date == d %}selected{% endif %}>{{ d }}</option>{% endfor %}</select>
+    {% endif %}
+  </div>
+</section>
+
+{% if b %}
+{% set c = b.content %}
+<section class="card">
+  <h2>What to watch today</h2>
+  {% if c.what_to_watch %}
+  <ol>{% for w in c.what_to_watch %}<li>{{ w }}</li>{% endfor %}</ol>
+  <p class="small muted">Based only on the stored stories and calendar below.
+    {% if c.watch_validated %}Number check passed.{% else %}⚠ {{ c.watch_note }}{% endif %}</p>
+  {% else %}<p class="muted">{{ c.watch_note or "Not enough information." }}</p>{% endif %}
+</section>
+
+<section class="card">
+  <h2>Prices at briefing time</h2>
+  <p class="small muted">Real stored quotes copied when the briefing was made. Crypto changes are over 24 hours; others vs the previous close or previous day.</p>
+  <div class="table-wrap"><table class="table">
+    <thead><tr><th>Asset</th><th class="r">Price</th><th class="r">Change</th><th>Status</th><th>Source · time</th></tr></thead>
+    <tbody>
+    {% for m in c.moves %}
+      <tr>
+        <td><a href="/asset/{{ m.symbol }}">{{ m.symbol }}</a> <span class="small muted">{{ m.name }}</span></td>
+        <td class="r num">{% if m.price is not none %}{{ "{:,.{}f}".format(m.price, m.decimals) }}{% if m.currency == "%" %}%{% endif %}{% else %}—{% endif %}</td>
+        <td class="r num {{ 'up' if (m.change or 0) > 0 else ('down' if (m.change or 0) < 0 else '') }}">
+          {% if m.currency == "%" and m.change is not none %}{{ "{:+.2f}".format(m.change) }} pp
+          {% elif m.change_pct is not none %}{{ "▲ +" if m.change_pct > 0 else ("▼ " if m.change_pct < 0 else "■ ") }}{{ "{:.2f}".format(m.change_pct) }}%
+          {% else %}—{% endif %}</td>
+        <td class="small">{{ m.status.replace("_", " ") }}</td>
+        <td class="small muted">{{ m.source or "—" }}{% if m.source_timestamp %} · <time data-utc="{{ m.source_timestamp }}">{{ m.source_timestamp }}</time>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+
+<section class="card">
+  <h2>Top stories</h2>
+  {% for s in stories %}{{ m.news_row(s) }}
+  {% else %}<p class="muted">No stories stored yet.</p>{% endfor %}
+</section>
+
+{% if c.review %}
+<section class="card">
+  <h2>3 review questions</h2>
+  <ol>{% for q in c.review %}<li>{{ q.question }}</li>{% endfor %}</ol>
+  <a class="btn" href="/quiz?mode=review">Answer them in the quiz →</a>
+</section>
+{% endif %}
+{% else %}
+<section class="card"><p class="muted">No briefing yet. Click "Make today's briefing now" (takes up to a minute).</p></section>
+{% endif %}
+
+<section class="card">
+  <h2>Economic calendar (next 2 weeks)</h2>
+  {% if events %}
+  <table class="table"><tbody>
+    {% for e in events %}
+    <tr class="{{ 'muted' if e.past else '' }}"><td class="small"><time data-utc="{{ e.time }}">{{ e.time }}</time></td>
+      <td><strong>{{ e.title }}</strong></td><td class="small">{{ e.source }}{% if e.unofficial %} <span class="chip">unofficial</span>{% endif %}</td>
+      <td class="small">{{ e.importance }}</td></tr>
+    {% endfor %}
+  </tbody></table>
+  {% else %}<p class="muted small">No scheduled US releases in the next 2 weeks.</p>{% endif %}
+  <p class="small muted">Official sources: BLS release calendar (CPI, jobs, PPI…) and the Fed's FOMC calendar. OPEC meetings are not listed (no free source).</p>
+</section>
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  const M = window.MLW, gen = document.getElementById("gen");
+  if (gen) gen.onclick = async () => {
+    gen.disabled = true; gen.textContent = "Working… (up to a minute)";
+    try { await M.api("/api/briefing/generate", { method: "POST" }); location.href = "/briefing"; }
+    catch (e) { M.toast("Briefing failed: " + M.esc(e.message), "toast-err"); gen.disabled = false; gen.textContent = "Try again"; }
+  };
+  const past = document.getElementById("past");
+  if (past) past.onchange = () => { location.href = M.isStatic ? `${M.base}/briefing/${past.value}/` : "/briefing?day=" + past.value; };
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% block title %}Settings · Markets Learning Workbench{% endblock %}
+{% block content %}
+<section class="page-head"><h1>Settings</h1></section>
+{% if site.static %}
+<section class="card">
+  <h2>Website version</h2>
+  <p>This website is rebuilt automatically about every 10 minutes by GitHub with fresh real data (prices, news, AI breakdowns,
+     quiz questions). Crypto prices stream live into your browser from Binance.</p>
+  <p class="small muted">Changing the watchlist, AI models or limits needs the app on your PC (Settings page there).
+     Keys are stored as GitHub secrets and never appear on this site.</p>
+</section>
+<section class="card">
+  <h2>Your progress in this browser</h2>
+  <p class="small" id="progress-summary">Loading…</p>
+  <p class="small muted">Quiz answers, the review schedule, completed lessons, concepts seen and price alerts are saved in this browser only.
+     To use them on another device, export here and import there.</p>
+  <div class="lesson-actions">
+    <button class="btn btn-primary" id="export-progress" type="button">Export my progress</button>
+    <label class="btn" for="import-progress">Import progress…</label>
+    <input id="import-progress" type="file" accept="application/json" hidden>
+    <button class="btn" id="reset-progress" type="button">Delete progress in this browser</button>
+  </div>
+</section>
+{% else %}
+
+<section class="card">
+  <h2>Watchlist</h2>
+  <p class="small muted">Switch assets on or off and change their order. Changes apply immediately.</p>
+  <div class="table-wrap"><table class="table">
+    <thead><tr><th>On</th><th>Asset</th><th>Class</th><th>Order</th><th></th></tr></thead>
+    <tbody>
+    {% for w in watch %}
+      <tr>
+        <td><input type="checkbox" class="js-en" data-sym="{{ w.symbol }}" {% if w.enabled %}checked{% endif %} aria-label="Show {{ w.symbol }}"></td>
+        <td><strong>{{ w.symbol }}</strong> <span class="small muted">{{ w.name }}</span>{% if w.custom %} <span class="chip">added by you</span>{% endif %}</td>
+        <td class="small">{{ w.asset_class }}</td>
+        <td><button class="btn js-mv" data-sym="{{ w.symbol }}" data-dir="-1" type="button" aria-label="Move {{ w.symbol }} up">↑</button>
+            <button class="btn js-mv" data-sym="{{ w.symbol }}" data-dir="1" type="button" aria-label="Move {{ w.symbol }} down">↓</button></td>
+        <td>{% if w.custom %}<button class="btn js-rm" data-sym="{{ w.symbol }}" type="button">Remove</button>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  <h3>Add an asset</h3>
+  <form id="add" class="alert-form">
+    <label class="field">Type <select id="add-kind"><option value="stock">US stock / ETF</option><option value="crypto">Crypto coin (Binance, in USDT)</option></select></label>
+    <label class="field">Symbol <input id="add-sym" placeholder="e.g. AMD or ADA" required maxlength="10"></label>
+    <label class="field">Name <input id="add-name" placeholder="e.g. Advanced Micro Devices" maxlength="80"></label>
+    <button class="btn" type="submit">Add</button>
+  </form>
+  <p class="small muted">The app checks that a real source has a price for the symbol before adding it.</p>
+</section>
+
+<section class="card">
+  <h2>AI (Gemini)</h2>
+  <form id="ai" class="settings-form">
+    <label class="field">Fast model (news tagging)
+      <input id="m-fast" list="models" value="{{ s.gemini_model_fast or s.gemini_model }}"></label>
+    <label class="field">Smart model (breakdowns, explanations, quizzes)
+      <input id="m-smart" list="models" value="{{ s.gemini_model_smart or s.gemini_model }}"></label>
+    <datalist id="models">{% for m in models %}<option value="{{ m }}">{% endfor %}</datalist>
+    <label class="field">Daily AI call limit (used today: {{ calls_today }})
+      <input id="limit" type="number" min="10" max="5000" value="{{ s.gemini_daily_call_limit }}"></label>
+    <label class="field">Automatic breakdowns per hour (0 = only when you click)
+      <input id="auto" type="number" min="0" max="20" value="{{ s.auto_breakdowns_per_hour }}"></label>
+    <label class="field">News refresh interval (minutes)
+      <input id="interval" type="number" min="2" max="120" value="{{ s.news_interval_min }}"></label>
+    <button class="btn" type="submit">Save</button>
+  </form>
+  <p class="small muted">Automatic jobs (tagging, automatic breakdowns, the 07:00 briefing) stop at 70% of the daily limit, leaving the rest for what you click.
+    <button class="btn" id="load-models" type="button">Load the model list from Google</button></p>
+</section>
+
+<section class="card">
+  <h2>Server</h2>
+  <p class="small muted">These are saved in <code>.env</code> and need a restart (stop with Ctrl+C, then start again).</p>
+  <label class="field"><input type="checkbox" id="lan" {% if s.lan_access %}checked{% endif %}> Allow my phone on the same Wi-Fi to open the app (LAN access)</label>
+  <label class="field"><input type="checkbox" id="unofficial" {% if s.allow_unofficial_sources %}checked{% endif %}> Allow unofficial sources (Yahoo, ForexFactory) as the last fallback</label>
+  <p class="small">Port: <strong>{{ s.port }}</strong> · App address on this PC: <code>http://127.0.0.1:{{ s.port }}</code></p>
+</section>
+
+<section class="card">
+  <h2>API keys</h2>
+  <p class="small muted">Keys are only in <code>.env</code>. This page shows whether each one is set — never the key.</p>
+  <table class="table"><tbody>
+  {% for name, is_set in keys.items() %}
+    <tr><td><code>{{ name }}</code></td><td>{% if is_set %}<span class="pill ok">✔ Set</span>{% else %}<span class="pill missing">✖ Missing</span>{% endif %}</td></tr>
+  {% endfor %}
+  </tbody></table>
+</section>
+{% endif %}
+{% endblock %}
+{% block scripts %}{% if not site.static %}
+<script>
+(function () {
+  const M = window.MLW, $ = (id) => document.getElementById(id);
+  const run = async (fn) => { try { await fn(); } catch (e) { M.toast(M.esc(e.message), "toast-err"); } };
+  document.querySelectorAll(".js-en").forEach((c) => c.onchange = () => run(async () => {
+    await M.api(`/api/watchlist/${c.dataset.sym}/enabled?enabled=${c.checked}`, { method: "POST" }); M.toast(`${c.dataset.sym} ${c.checked ? "on" : "off"}.`);
+  }));
+  document.querySelectorAll(".js-mv").forEach((b) => b.onclick = () => run(async () => {
+    await M.api(`/api/watchlist/${b.dataset.sym}/move?direction=${b.dataset.dir}`, { method: "POST" }); location.reload();
+  }));
+  document.querySelectorAll(".js-rm").forEach((b) => b.onclick = () => run(async () => {
+    await M.api(`/api/watchlist/${b.dataset.sym}`, { method: "DELETE" }); location.reload();
+  }));
+  $("add").onsubmit = (ev) => { ev.preventDefault(); run(async () => {
+    const r = await M.api("/api/watchlist/add", { method: "POST", body: { kind: $("add-kind").value, symbol: $("add-sym").value, name: $("add-name").value } });
+    M.toast(`${r.symbol} added.`); setTimeout(() => location.reload(), 800);
+  }); };
+  $("ai").onsubmit = (ev) => { ev.preventDefault(); run(async () => {
+    await M.api("/api/settings", { method: "POST", body: { gemini_model_fast: $("m-fast").value, gemini_model_smart: $("m-smart").value,
+      gemini_daily_call_limit: Number($("limit").value), auto_breakdowns_per_hour: Number($("auto").value), news_interval_min: Number($("interval").value) } });
+    M.toast("Saved.");
+  }); };
+  $("load-models").onclick = () => run(async () => {
+    const d = await M.api("/api/gemini/models");
+    $("models").innerHTML = d.models.map((m) => `<option value="${M.esc(m)}">`).join("");
+    M.toast(`${d.models.length} models loaded - click a model box to pick one.`);
+  });
+  $("lan").onchange = () => run(async () => { await M.api("/api/settings/env", { method: "POST", body: { name: "LAN_ACCESS", value: String($("lan").checked) } }); M.toast("Saved to .env. Restart the app to apply."); });
+  $("unofficial").onchange = () => run(async () => { await M.api("/api/settings/env", { method: "POST", body: { name: "ALLOW_UNOFFICIAL_SOURCES", value: String($("unofficial").checked) } }); M.toast("Saved to .env. Restart the app to apply."); });
+})();
+</script>
+{% endif %}{% endblock %}

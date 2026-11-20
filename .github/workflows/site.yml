@@ -1,0 +1,99 @@
+# Builds the website (GitHub Pages) with fresh real data and publishes it.
+# A build takes ~3-6 minutes; the `next` job then waits and starts the next build, so the site refreshes
+# about every 10 minutes. The schedule below is only a backup in case the chain stops.
+name: Build website
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 * * * *"
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+  actions: write
+
+concurrency:
+  group: website
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: pip
+
+      - name: Install
+        run: pip install -r requirements.txt
+
+      - name: Restore the database from the previous build
+        uses: actions/cache/restore@v4
+        with:
+          path: site_db
+          key: site-db-${{ github.run_id }}
+          restore-keys: site-db-
+
+      - name: Build the site
+        env:
+          # Add these in: repository Settings -> Secrets and variables -> Actions -> New repository secret
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
+          TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
+          COINGECKO_API_KEY: ${{ secrets.COINGECKO_API_KEY }}
+          # Optional repository variables (same page, "Variables" tab)
+          GEMINI_MODEL_FAST: ${{ vars.GEMINI_MODEL_FAST || 'gemini-3.5-flash-lite' }}
+          GEMINI_MODEL_SMART: ${{ vars.GEMINI_MODEL_SMART || 'gemini-3.6-flash' }}
+          GEMINI_DAILY_CALL_LIMIT: ${{ vars.SITE_GEMINI_DAILY_LIMIT || '150' }}
+          SITE_AI_TASKS_PER_RUN: ${{ vars.SITE_AI_TASKS_PER_RUN || '2' }}
+          MLW_NO_DOTENV: "1"
+          DATABASE_PATH: site_db/markets.db
+          LOG_DIR: site_db/logs
+        run: python build_site.py --out _site --base "/${{ github.event.repository.name }}"
+
+      - name: Save the database for the next build
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: site_db
+          key: site-db-${{ github.run_id }}
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - id: deploy
+        uses: actions/deploy-pages@v4
+
+  next:
+    needs: build
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Start the next build in a few minutes (only one chain at a time)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          sleep 300
+          others=$(gh run list -R "$REPO" --workflow site.yml --json databaseId,status \
+            --jq "[.[] | select((.status==\"queued\" or .status==\"in_progress\" or .status==\"waiting\" or .status==\"pending\") and .databaseId != ${{ github.run_id }})] | length")
+          if [ "$others" = "0" ]; then
+            gh workflow run site.yml -R "$REPO" --ref main && echo "next build started"
+          else
+            echo "another build is already queued or running"
+          fi

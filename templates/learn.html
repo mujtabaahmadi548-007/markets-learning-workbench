@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Learn · Markets Learning Workbench{% endblock %}
+{% block content %}
+<section class="page-head">
+  <p class="eyebrow">Learning paths</p>
+  <h1>Learn</h1>
+  <p class="muted">Five learning paths. Every lesson shows today's real news and live prices as examples.
+    Progress: <span id="learn-progress">{{ stats.lessons_done }} of {{ stats.lessons_total }}</span> lessons done.</p>
+</section>
+<div class="paths">
+  {% for p in paths %}
+  <section class="card path" data-path-key="{{ p.key }}">
+    <div class="path-icon"><img src="/static/img/topics/{{ {'gold':'gold','oil':'oil','crypto':'bitcoin','stocks':'stocks','macro':'centralbank'}.get(p.key, 'markets') }}.svg" alt=""></div>
+    <h2>{{ p.title }}</h2>
+    <p class="small muted">{{ p.description }}</p>
+    <div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="{{ p.total }}" aria-valuenow="{{ p.done }}"
+         aria-label="{{ p.done }} of {{ p.total }} lessons done"><span style="width: {{ (100 * p.done / p.total) if p.total else 0 }}%"></span></div>
+    <ol class="lesson-list">
+      {% for l in p.lessons %}
+      <li data-lesson-id="{{ l.id }}"><a href="/learn/{{ l.id }}">{{ l.title }}</a> {% if l.done %}<span class="up small">✔ done</span>{% endif %}</li>
+      {% endfor %}
+    </ol>
+  </section>
+  {% endfor %}
+</div>
+<section class="card">
+  <h2>Also</h2>
+  <ul>
+    <li><a href="/glossary">Glossary</a> — every concept, with your mastery level.</li>
+    <li><a href="/quiz">Quiz</a> — questions from today's news, concepts, and spaced-repetition review.</li>
+  </ul>
+</section>
+{% endblock %}

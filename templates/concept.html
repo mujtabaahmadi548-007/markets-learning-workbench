@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% import "_macros.html" as m %}
+{% block title %}{{ c.name }} · Glossary{% endblock %}
+{% block content %}
+<section class="page-head">
+  <p class="eyebrow"><a href="/glossary">Glossary</a> · {{ c.category }}</p>
+  <h1>{{ c.name }}</h1>
+  <p class="small muted" data-concepts='{{ [c.slug] | tojson }}'><span id="concept-progress" data-slug="{{ c.slug }}">Seen {{ c.times_seen }} time(s){% if c.mastery is not none and c.times_seen %} · Mastery {{ (c.mastery * 100) | round | int }}%{% endif %}
+    </span>{% if c.origin == "edited" %} · edited by you{% elif c.origin == "ai" and c.long %} · written by AI{% endif %}</p>
+</section>
+
+<section class="card" id="view">
+  {% if c.short %}<p><strong>{{ c.short }}</strong></p>{% endif %}
+  {% if c.long %}
+    {% for para in c.long.split("\n") if para.strip() %}<p>{{ para }}</p>{% endfor %}
+    <h3>Real-world example</h3>
+    <p>{{ c.example or "Not enough information." }}</p>
+  {% else %}
+    <p class="muted">No full explanation yet.</p>
+  {% endif %}
+  {% if c.related %}<p class="small">Related: {% for r in c.related %}<a class="chip" href="/glossary/{{ r.slug }}">{{ r.name }}</a> {% endfor %}</p>{% endif %}
+  <div class="lesson-actions">
+    {% if ai_ready and not site.static %}<button class="btn" id="explain" type="button">{{ "Rewrite with AI" if c.long else "Explain this concept (AI)" }}</button>{% endif %}
+    {% if not site.static %}<button class="btn" id="edit" type="button">Edit</button>{% endif %}
+    {% if c.long and ai_ready and not site.static %}<button class="btn" id="quiz" type="button">Quiz me on this</button>{% endif %}
+  </div>
+</section>
+
+<section class="card" id="editor" hidden>
+  <h2>Edit</h2>
+  <label class="field">Short definition<textarea id="e-short" rows="2">{{ c.short or "" }}</textarea></label>
+  <label class="field">Explanation<textarea id="e-long" rows="6">{{ c.long or "" }}</textarea></label>
+  <label class="field">Example<textarea id="e-ex" rows="3">{{ c.example or "" }}</textarea></label>
+  <button class="btn" id="save" type="button">Save</button>
+</section>
+
+<section class="card">
+  <h2>In the news</h2>
+  {% if articles %}
+  <div class="news-list">
+    {% for e in articles %}{{ m.news_row(e) }}{% endfor %}
+  </div>
+  {% else %}<p class="muted small">No stored article mentions this concept yet.</p>{% endif %}
+</section>
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  const M = window.MLW, slug = {{ c.slug | tojson }};
+  const ex = document.getElementById("explain");
+  if (ex) ex.onclick = async () => {
+    ex.disabled = true; ex.textContent = "Writing… (15–30 s)";
+    try { await M.api(`/api/concepts/${slug}/explain`, { method: "POST" }); location.reload(); }
+    catch (e) { M.toast("Failed: " + M.esc(e.message), "toast-err"); ex.disabled = false; ex.textContent = "Try again"; }
+  };
+  const edit = document.getElementById("edit");
+  if (edit) edit.onclick = () => { document.getElementById("editor").hidden = false; };
+  document.getElementById("save").onclick = async () => {
+    try {
+      await M.api(`/api/concepts/${slug}`, { method: "POST", body: { short: document.getElementById("e-short").value,
+        long: document.getElementById("e-long").value, example: document.getElementById("e-ex").value } });
+      location.reload();
+    } catch (e) { M.toast("Save failed: " + M.esc(e.message), "toast-err"); }
+  };
+  const quiz = document.getElementById("quiz");
+  if (quiz) quiz.onclick = async () => {
+    quiz.disabled = true; quiz.textContent = "Writing and checking questions…";
+    try {
+      const r = await M.api("/api/quiz/generate", { method: "POST", body: { source_type: "concept", source_id: slug, n: 3 } });
+      M.toast(`${r.kept} question(s) ready.`);
+      if (r.kept) location.href = "/quiz?mode=concepts";
+    } catch (e) { M.toast("Quiz failed: " + M.esc(e.message), "toast-err"); }
+    quiz.disabled = false; quiz.textContent = "Quiz me on this";
+  };
+})();
+</script>
+{% endblock %}

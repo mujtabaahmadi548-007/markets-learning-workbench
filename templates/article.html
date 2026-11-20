@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block title %}{{ a.title[:60] }} · Markets Learning Workbench{% endblock %}
+{% block content %}
+<section class="page-head">
+  <p class="eyebrow"><a href="/news">News</a> · {{ a.source_name }}</p>
+  <h1 class="article-title">{{ a.title }}</h1>
+</section>
+<div class="grid-2 article-top">
+  <div class="article-hero">
+    {% if a.image_url %}
+      <img src="{{ a.image_url }}" alt="" referrerpolicy="no-referrer" data-fallback="/static/img/topics/{{ a.topic or 'markets' }}.svg">
+      <span class="img-credit">Image: {{ a.source_name }}</span>
+    {% else %}
+      <img src="/static/img/topics/{{ a.topic or 'markets' }}.svg" alt="">
+      <span class="illus-tag">Illustration — the article has no image of its own</span>
+    {% endif %}
+  </div>
+  <section class="card" style="margin-bottom:0">
+    <p class="small" style="margin-top:0">
+      <strong>{{ a.source_name }}</strong>
+      {% if a.is_official %}<span class="chip chip-ok">official</span>{% endif %}<br>
+      Published {% if a.published_at %}<time data-utc="{{ a.published_at }}">{{ a.published_at }}</time>{% else %}<span class="muted">(time not given by the feed)</span>{% endif %}<br>
+      <span class="muted">Fetched <time data-utc="{{ a.fetched_at }}">{{ a.fetched_at }}</time></span>
+    </p>
+    <p><a class="btn btn-primary" href="{{ a.url }}" target="_blank" rel="noopener noreferrer">Read the original article ↗</a></p>
+    {% if a.via_google_news %}<p class="small muted">The link goes through Google News, which forwards you to the publisher.</p>{% endif %}
+    <p class="small muted">Tags:
+      {% for t in a.tags %}<a class="chip tag" href="/asset/{{ t.symbol }}" title="{{ t.method }} tag, confidence {{ t.confidence }}">{{ t.symbol }}</a> {% else %}none{% endfor %}<br>
+      Importance {{ a.importance }} / 100{% if a.outlets > 1 %} · {{ a.outlets }} outlets cover this story{% endif %}<br>
+      Article text: {% if a.body_fetched %}fetched ({{ a.body_chars }} characters){% elif a.body_attempted %}not available — {{ a.body_error }}{% else %}not fetched yet{% endif %}</p>
+  </section>
+</div>
+{% if a.description %}<blockquote>{{ a.description }}</blockquote>{% endif %}
+
+<section class="card" id="breakdown-card" data-concepts='{{ concepts | map(attribute="slug") | list | tojson }}'>
+  <div class="chart-head">
+    <h2>AI breakdown</h2>
+    {% if ai_ready and not site.static %}<button class="btn" id="gen-bd" type="button">{{ "Regenerate" if b else "Generate breakdown" }}</button>{% endif %}
+  </div>
+  {% if b %}
+    {% set c = b.content %}
+    <p class="basis-line {{ 'warn-text' if c.basis != 'full_article' else 'muted' }} small">
+      <strong>{{ basis_text }}</strong> Model: {{ b.model }} · created <time data-utc="{{ b.created_at }}">{{ b.created_at }}</time>
+      · Number check: {% if b.validation_passed %}<span class="up">✔ every number found in the source</span>{% else %}<span class="down">⚠ {{ b.validation_notes }}</span>{% endif %}
+    </p>
+    <h3>What happened</h3>
+    <p>{{ c.what_happened | autolink(concepts) }}</p>
+    <h3>Why it matters</h3>
+    <p>{{ c.why_it_matters | autolink(concepts) }}</p>
+    {% if c.affected_assets %}
+    <h3>Assets the article connects</h3>
+    <div class="table-wrap"><table class="table">
+      <thead><tr><th>Asset</th><th>Direction the article suggests</th><th>Mechanism (cause → effect)</th></tr></thead>
+      <tbody>
+      {% for x in c.affected_assets %}
+        <tr><td><a href="/asset/{{ x.symbol }}">{{ x.symbol }}</a></td>
+            <td>{% if x.direction_suggested_by_article == 'up' %}<span class="up">▲ up</span>{% elif x.direction_suggested_by_article == 'down' %}<span class="down">▼ down</span>{% else %}<span class="muted">■ unclear</span>{% endif %}</td>
+            <td>{{ x.mechanism | autolink(concepts) }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+    <p class="small muted">Directions are what the article suggests, not a prediction. Not financial advice.</p>
+    {% endif %}
+    <div class="grid-2">
+      <div><h3>Facts reported</h3><ul>{% for f in c.facts_vs_opinion.facts %}<li>{{ f }}</li>{% else %}<li class="muted">None listed</li>{% endfor %}</ul></div>
+      <div><h3>Opinions / speculation (the article's view, not fact)</h3><ul>{% for f in c.facts_vs_opinion.opinions_or_speculation %}<li>{{ f }}</li>{% else %}<li class="muted">None listed</li>{% endfor %}</ul></div>
+    </div>
+    <h3>Explained simply</h3>
+    <p>{{ c.beginner_explanation | autolink(concepts) }}</p>
+    {% if c.concepts %}
+    <h3>Concepts</h3>
+    <ul class="concepts">{% for k in c.concepts %}<li><a href="/glossary/{{ k.slug }}"><strong>{{ k.name }}</strong></a> — {{ k.one_line }}</li>{% endfor %}</ul>
+    {% endif %}
+  {% else %}
+    <p class="muted">No breakdown yet. {% if site.static %}On the website, breakdowns are written automatically for the most important stories; open the original article meanwhile.{% elif ai_ready %}Click "Generate breakdown" (takes about 15–30 seconds; uses 1–2 of your daily AI calls).{% else %}Add GEMINI_API_KEY to .env to enable AI breakdowns.{% endif %}</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Price moves since this was published</h2>
+  <p class="small muted">Real prices from one source per asset: the last price before publication vs the latest price. Timing does not prove the article caused the move.</p>
+  <div id="moves"><p class="muted small">Loading…</p></div>
+</section>
+
+<section class="card">
+  <h2>Test yourself</h2>
+  {% if site.static %}
+  <p class="small muted">Quiz questions are written automatically for top stories; practise them on the <a href="/quiz?mode=today">Quiz page</a>.</p>
+  {% elif ai_ready %}
+  <p class="small muted">Creates up to 3 questions from this article's text. A second AI check keeps only questions whose answer the text really supports.</p>
+  <button class="btn" id="quiz-me" type="button">Quiz me on this</button>
+  {% else %}<p class="muted small">Needs GEMINI_API_KEY.</p>{% endif %}
+</section>
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  const M = window.MLW, id = {{ a.id }};
+  const gen = document.getElementById("gen-bd");
+  if (gen) gen.onclick = async () => {
+    gen.disabled = true; gen.textContent = "Working… (15–30 s)";
+    try { await M.api(`/api/articles/${id}/breakdown`, { method: "POST" }); location.reload(); }
+    catch (e) { M.toast("Breakdown failed: " + M.esc(e.message), "toast-err"); gen.disabled = false; gen.textContent = "Try again"; }
+  };
+  const quiz = document.getElementById("quiz-me");
+  if (quiz) quiz.onclick = async () => {
+    quiz.disabled = true; quiz.textContent = "Writing and checking questions… (30–60 s)";
+    try {
+      const r = await M.api("/api/quiz/generate", { method: "POST", body: { source_type: "article", source_id: String(id), n: 3 } });
+      M.toast(`${r.kept} question(s) ready${r.discarded ? `, ${r.discarded} discarded by the checker` : ""}.`);
+      if (r.kept) location.href = "/quiz?mode=today";
+      else { quiz.disabled = false; quiz.textContent = "Quiz me on this"; }
+    } catch (e) { M.toast("Quiz failed: " + M.esc(e.message), "toast-err"); quiz.disabled = false; quiz.textContent = "Quiz me on this"; }
+  };
+  (async () => {
+    const box = document.getElementById("moves");
+    try {
+      const d = await M.api(`/api/articles/${id}/moves`);
+      if (!d.moves.length) { box.innerHTML = '<p class="muted small">This article is not tagged to a tracked asset.</p>'; return; }
+      box.innerHTML = '<div class="table-wrap"><table class="table"><thead><tr><th>Asset</th><th class="r">Before publication</th><th class="r">Latest</th><th class="r">Change</th><th>Source</th></tr></thead><tbody>' +
+        d.moves.map((m) => {
+          if (m.error) return `<tr><td>${M.esc(m.symbol)}</td><td colspan="4" class="muted small">${M.esc(m.error)}</td></tr>`;
+          const up = m.change_pct > 0, down = m.change_pct < 0;
+          const t0 = new Date(m.then_time), t1 = new Date(m.now_time);
+          const fmt = (v) => m.currency === "%" ? M.fmtNum(v, 2) + "%" : M.fmtNum(v, m.decimals);
+          return `<tr><td><a href="/asset/${encodeURIComponent(m.symbol)}">${M.esc(m.symbol)}</a></td>
+            <td class="r num">${fmt(m.then_price)}<br><span class="small muted" title="${M.esc(M.utcLabel(t0))}">${m.daily ? "close " + M.dateOnly(t0) : M.esc(M.shortJakarta(t0))}</span></td>
+            <td class="r num">${fmt(m.now_price)}<br><span class="small muted" title="${M.esc(M.utcLabel(t1))}">${m.daily ? M.dateOnly(t1) : M.esc(M.shortJakarta(t1))}</span></td>
+            <td class="r num ${up ? "up" : down ? "down" : ""}">${up ? "▲ +" : down ? "▼ −" : "■ "}${M.fmtNum(Math.abs(m.change_pct), 2)}%</td>
+            <td class="small">${M.esc(m.source)}${m.is_proxy ? ' <span class="chip">proxy</span>' : ""}${m.is_unofficial ? ' <span class="chip">unofficial</span>' : ""}<br><span class="muted">${M.esc(m.note || "")}</span></td></tr>`;
+        }).join("") + "</tbody></table></div>";
+    } catch (e) { box.innerHTML = `<p class="warn-text small">Could not load price moves: ${M.esc(e.message)}</p>`; }
+  })();
+})();
+</script>
+{% endblock %}

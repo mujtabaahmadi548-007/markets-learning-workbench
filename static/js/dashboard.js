@@ -99,7 +99,10 @@
     const el = document.getElementById("movers");
     if (!list.length) { el.innerHTML = '<p class="muted">Waiting for prices…</p>'; return; }
     list.sort((a, b) => b.change_pct - a.change_pct);
-    const top = list.slice(0, 3), bottom = list.slice(-3).reverse().filter((q) => !top.includes(q));
+    // Only real rises under "Up most" and real falls under "Down most" (moves under 0.005 % count as flat).
+    const top = list.filter((q) => q.change_pct >= 0.005).slice(0, 3);
+    const bottom = list.filter((q) => q.change_pct <= -0.005).reverse().slice(0, 3);
+    const none = (txt) => `<p class="muted small">${txt}</p>`;
     const item = (q) => {
       const ch = M.fmtChange(q);
       return `<div class="mover"><a href="${M.base}/asset/${encodeURIComponent(q.symbol)}"><strong>${M.esc(q.symbol)}</strong></a>
@@ -107,8 +110,8 @@
         <span class="muted small">${M.esc(ch.basis)}</span>
         <a class="btn btn-sm" href="${M.base}/asset/${encodeURIComponent(q.symbol)}?why=1#why">Why?</a></div>`;
     };
-    const out = `<div class="mover-col"><span class="muted small">Up most</span>${top.map(item).join("")}</div>
-      <div class="mover-col"><span class="muted small">Down most</span>${bottom.map(item).join("")}</div>`;
+    const out = `<div class="mover-col"><span class="muted small">Up most</span>${top.length ? top.map(item).join("") : none("Nothing is up right now.")}</div>
+      <div class="mover-col"><span class="muted small">Down most</span>${bottom.length ? bottom.map(item).join("") : none("Nothing is down right now.")}</div>`;
     if (el.dataset.html !== out) { el.innerHTML = out; el.dataset.html = out; }
   }
 

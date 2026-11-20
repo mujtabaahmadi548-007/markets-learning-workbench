@@ -6,12 +6,17 @@
   let mode = new URLSearchParams(location.search).get("mode") || "today";
   let queue = [], idx = 0, score = { right: 0, total: 0 };
 
-  const EMPTY = {
+  const EMPTY = M.isStatic ? {
+    today: "No new questions from today's news yet. New ones are written automatically several times a day.",
+    concepts: "No unanswered concept or lesson questions yet. New ones are written automatically several times a day.",
+  } : {
     today: "No new questions from today's news. Use “Quiz me” below on a top story to create some.",
     concepts: "No unanswered concept or lesson questions. Open a lesson or glossary entry and click “Quiz me”.",
+  };
+  Object.assign(EMPTY, {
     review: "Nothing is due for review right now. Missed questions come back here after about 10 minutes; correct ones after 1, 6, then more days.",
     weak: "No weak topics yet - answer more questions first.",
-  };
+  });
 
   function setTabs() {
     document.querySelectorAll("[data-mode]").forEach((b) => {

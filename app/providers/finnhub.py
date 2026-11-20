@@ -60,10 +60,16 @@ class FinnhubProvider(Provider):
     def __init__(self, http, api_key: str = "") -> None:  # noqa: ANN001
         super().__init__(http, api_key)
         self._limiter = RateLimiter(50)  # stay under the free 60/min
+        # The free plan allows ONE stream connection per key. The website build turns streaming off so it
+        # never takes the connection away from the app running on the user's PC (REST quotes only).
+        self.stream_enabled = True
 
     @property
     def can_stream(self) -> bool:
-        return self.configured
+        return self.configured and self.stream_enabled
+
+    def serves(self, symbol: str) -> bool:
+        return self.stream_enabled or ":" not in symbol  # OANDA:… symbols exist only on the stream
 
     async def get_quote(self, symbol: str) -> QuoteData:
         if not self.configured:

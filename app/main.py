@@ -62,6 +62,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         assets = load_assets(db)
         http = make_http_client()
         providers = build_providers(settings, http)
+        if build_mode and "finnhub" in providers:
+            # Finnhub free = one stream per key, used by the app on the user's PC; the website uses REST quotes.
+            providers["finnhub"].stream_enabled = False
         feeds = FeedManager(db, providers, assets)
         candles = CandleService(db, providers, feeds.health)
         gemini = GeminiService(settings, db)

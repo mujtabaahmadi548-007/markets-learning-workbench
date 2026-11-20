@@ -102,3 +102,10 @@ def test_finnhub_documented_samples() -> None:
                                    "type": "trade"})
     assert trades["BINANCE:BTCUSDT"].price == 7297.10  # newest trade wins
     assert finnhub.parse_trades({"type": "ping"}) == {}
+
+
+def test_finnhub_stream_off_for_website_build() -> None:
+    p = finnhub.FinnhubProvider(http=None, api_key="test-key")
+    assert p.can_stream and p.serves("OANDA:XAU_USD") and p.serves("AAPL")
+    p.stream_enabled = False  # website build: never take the one stream connection from the user's app
+    assert not p.can_stream and not p.serves("OANDA:XAU_USD") and p.serves("AAPL")

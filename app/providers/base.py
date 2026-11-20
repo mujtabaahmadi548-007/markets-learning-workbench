@@ -155,6 +155,10 @@ class Provider:
     def can_stream(self) -> bool:
         return False
 
+    def serves(self, symbol: str) -> bool:
+        """Whether this provider can deliver quotes for the symbol in its current mode."""
+        return True
+
     async def stream(self, symbols: set[str], on_update: OnUpdate, on_connected: Callable[[], None]) -> None:
         """Run until the connection drops (then return/raise; the caller reconnects)."""
         raise UnsupportedError(f"{self.label} has no stream")

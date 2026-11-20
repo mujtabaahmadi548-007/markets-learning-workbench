@@ -273,7 +273,7 @@ class FeedManager:
         out = []
         for i, e in enumerate(asset.quote_chain):
             p = self.providers.get(e.provider)
-            if p is not None and p.configured:
+            if p is not None and p.configured and p.serves(e.symbol):
                 out.append((i, e, p))
         return out
 

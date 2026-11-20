@@ -151,7 +151,7 @@ Actions → New repository secret**:
 | Secret name | Needed for |
 |---|---|
 | `GEMINI_API_KEY` | All AI on the website (without it: no breakdowns, briefing or new questions) |
-| `FINNHUB_API_KEY` | Live US stocks, gold/silver/oil (OANDA) and company news |
+| `FINNHUB_API_KEY` | US stock quotes and company news. The website uses Finnhub's REST quotes only, never its live stream (the free plan allows one stream per key, and the app on your PC keeps it) |
 | `TWELVE_DATA_API_KEY` | optional — official stock charts |
 | `COINGECKO_API_KEY` | optional — steadier crypto backup |
 

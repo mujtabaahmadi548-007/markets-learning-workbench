@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import re
 import shutil
@@ -260,8 +261,8 @@ def export(client, st, portal, out: Path) -> None:  # noqa: ANN001
     for a in articles:
         if a.get("description") and len(a["description"]) > 320:
             a["description"] = a["description"][:320].rsplit(" ", 1)[0] + "…"
-    dump(out, "news.json", {"built_at": built, "articles": articles})
     assets = sorted(st.feeds.assets.values(), key=lambda a: (a.sort_order, a.id))
+    write_news(out, articles, [a.symbol for a in assets], built)
     for a in assets:
         d = client.get(f"/api/assets/{a.symbol}").json()
         d.pop("server_time", None)
@@ -311,6 +312,62 @@ def export(client, st, portal, out: Path) -> None:  # noqa: ANN001
     say(f"pages: {n} written")
     check_links(out)
     dump(out, "meta.json", {"built_at": built, "log": LOG[-40:], "entries": ENTRIES[-40:]})
+
+
+# ---------------------------------------------------------------- news files
+# Phones should not download three days of news (about 0.6 MB compressed) to show six headlines. The browser
+# reads the smallest file that holds what a page needs (static/js/static-site.js):
+#   news-top.json        the highest-ranked articles of the last 24 hours (dashboard "Top stories")
+#   news-asset/SYM.json  the highest-ranked articles tagged with one asset, last 72 hours (asset pages)
+#   news-24h.json        every article of the last 24 hours (News page default)
+#   news.json            every article of the last 72 hours (longer time windows)
+# Ranking is importance x exp(-age/18 h), the same formula as the browser. Time passing multiplies every score
+# by the same factor, so the order - and therefore a ranked excerpt's top items - stays the same until the next build.
+NEWS_TOP = 80
+NEWS_PER_ASSET = 40
+NEWS_FIELDS = ("id", "title", "description", "url", "source_name", "published_at", "importance", "tags",
+               "has_breakdown", "outlets", "is_official", "story", "image_url", "topic")
+
+
+def slim_article(a: dict) -> dict:
+    """Only the fields the website's pages read (renderArticle in common.js and the news filters)."""
+    s = {k: a.get(k) for k in NEWS_FIELDS}
+    if not s["published_at"]:
+        s["fetched_at"] = a.get("fetched_at")
+    # Pages only ever show or filter on tags with confidence >= 0.5.
+    s["tags"] = [t for t in (a.get("tags") or []) if (t.get("confidence") or 0) >= 0.5]
+    # Empty values cost bytes and mean the same as a missing key to the page code. ("story" is used as a key and
+    # "importance" in arithmetic, so both always stay; note 0 == False in Python.)
+    return {k: v for k, v in s.items() if k in ("story", "importance") or v not in (None, False, "", [])}
+
+
+def article_age_hours(a: dict, now: datetime) -> float:
+    t = a.get("published_at") or a.get("fetched_at")
+    if not t:
+        return 0.0
+    dt = t if isinstance(t, datetime) else datetime.fromisoformat(str(t))
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return (now - dt).total_seconds() / 3600
+
+
+def write_news(out: Path, articles: list[dict], symbols: list[str], built: str) -> None:
+    now = utcnow()
+    rows = [(slim_article(a), article_age_hours(a, now)) for a in articles]
+    sources = sorted({a["source_name"] for a in articles if a.get("source_name")})
+    day = [s for s, age in rows if age <= 24]
+
+    def by_rank(items: list[tuple[dict, float]]) -> list[dict]:
+        return [s for s, _ in sorted(items, key=lambda r: -(r[0]["importance"] or 0) * math.exp(-max(0.0, r[1]) / 18))]
+
+    dump(out, "news.json", {"built_at": built, "articles": [s for s, _ in rows], "sources": sources})
+    dump(out, "news-24h.json", {"built_at": built, "articles": day, "sources": sources})
+    top = by_rank([r for r in rows if r[1] <= 24])
+    dump(out, "news-top.json", {"built_at": built, "articles": top[:NEWS_TOP], "complete": len(top) <= NEWS_TOP})
+    for sym in symbols:
+        mine = by_rank([r for r in rows if any(t["symbol"] == sym for t in r[0].get("tags", []))])
+        dump(out, f"news-asset/{sym}.json", {"built_at": built, "articles": mine[:NEWS_PER_ASSET],
+                                              "complete": len(mine) <= NEWS_PER_ASSET})
 
 
 NEWS_LINK = re.compile(r'href="' + re.escape(BASE) + r'/news/(\d+)/?["#?]')

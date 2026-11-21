@@ -37,13 +37,34 @@
     const ageH = Math.max(0, (Date.now() - t) / 3600000);
     return a.importance * Math.exp(-ageH / 18);
   }
+  // News comes in several files so phones download only what a page needs (built by build_site.py):
+  //   news-top.json (dashboard), news-asset/SYM.json (asset pages), news-24h.json (News page), news.json (3 days).
+  // The ranked excerpts give the same top items as the full list (ranking keeps its order as time passes);
+  // if an excerpt runs short, or is missing, the full file is used.
   async function news(q) {
-    const d = await getJSON("news.json");
+    const hours = Number(q.get("hours") || 24), limit = Number(q.get("limit") || 100), sym = q.get("symbol");
+    const narrowed = ["source", "q", "asset_class", "has_breakdown"].some((k) => q.get(k));
+    let excerpt = null;
+    if (q.get("sort") === "important" && !narrowed && limit <= 20 && hours > 0) {
+      if (!sym && hours <= 24) excerpt = "news-top.json";
+      else if (sym && hours <= 72) excerpt = `news-asset/${encodeURIComponent(sym)}.json`;
+    }
+    if (excerpt) {
+      try {
+        const d = await getJSON(excerpt);
+        const out = pickNews(d.articles, q);
+        if (out.length >= limit || d.complete) return { articles: out, last_run: d.built_at };
+      } catch (e) { /* no excerpt file: use the full list below */ }
+    }
+    const d = await getJSON(hours > 0 && hours <= 24 ? "news-24h.json" : "news.json");
+    return { articles: pickNews(d.articles, q), last_run: d.built_at };
+  }
+  function pickNews(articles, q) {
     const hours = Number(q.get("hours") || 24);
     const sym = q.get("symbol"), cls = q.get("asset_class"), src = q.get("source"), text = (q.get("q") || "").toLowerCase().trim();
     const hb = q.get("has_breakdown"), sort = q.get("sort") || "latest", limit = Number(q.get("limit") || 100);
     const now = Date.now();
-    let out = d.articles.filter((a) => {
+    let out = articles.filter((a) => {
       const t = Date.parse(a.published_at || a.fetched_at);
       if (hours > 0 && now - t > hours * 3600000) return false;
       const strong = (a.tags || []).filter((x) => x.confidence >= 0.5);
@@ -61,7 +82,7 @@
       const seen = new Set();
       out = out.filter((a) => (seen.has(a.story) ? false : (seen.add(a.story), true)));
     }
-    return { articles: out.slice(0, limit), last_run: d.built_at };
+    return out.slice(0, limit);
   }
 
   // ---------------------------------------------------------------- learning (spaced repetition, same as the app)
@@ -172,7 +193,10 @@
     if (typeof body === "string") { try { body = JSON.parse(body); } catch (e) { /* ignore */ } }
     let m;
     if (p === "/api/news" && method === "GET") return news(q);
-    if (p === "/api/news/sources") { const d = await getJSON("news.json"); return { sources: [...new Set(d.articles.map((a) => a.source_name))].sort() }; }
+    if (p === "/api/news/sources") {
+      const d = await getJSON("news-24h.json");  // carries the source list of all 3 days
+      return { sources: d.sources || [...new Set(d.articles.map((a) => a.source_name))].sort() };
+    }
     if (p === "/api/sparklines") return getJSON("sparklines.json");
     if (p === "/api/quotes") return { quotes: [...LIVE.quotes.values()] };
     if ((m = p.match(/^\/api\/assets\/([^/]+)$/))) {

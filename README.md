@@ -134,7 +134,9 @@ GitHub builds the website from this repository with the same code and the same h
 - A build collects real prices, news, images and (with a Gemini key) AI breakdowns, then publishes the
   pages. Each build starts the next one about 5 minutes after it ends, so the site is **rebuilt about every
   10 minutes**; an hourly schedule restarts the chain if it ever stops. The database is carried from build to
-  build in the GitHub Actions cache (not in git).
+  build in the GitHub Actions cache (not in git). Publishing is a separate `deploy` job that waits until
+  GitHub lists the uploaded pages and retries up to 3 times (GitHub's artifact list can lag a few seconds
+  behind an upload).
 - **Crypto prices are live in your browser** (Binance stream). Stocks, metals, energy and macro show the
   build's real quote with its real age and a DELAYED/STALE/MARKET CLOSED badge.
 - Your **learning progress and alerts are kept in your browser** (each device separately). Settings →

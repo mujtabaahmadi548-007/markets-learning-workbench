@@ -1,6 +1,7 @@
 """Shared web objects: version string, Jinja templates, and the per-app state container."""
 from __future__ import annotations
 
+import hashlib
 import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -41,12 +42,27 @@ def autolink(text: str | None, concepts: list[dict] | None) -> Markup:
     return Markup(s)
 
 
+_ASSET_VERSIONS: dict[str, tuple[int, int, str]] = {}
+
+
 def asset_url(path: str) -> str:
-    """/static/<path>?v=<file modified time>, so browsers fetch a fresh copy whenever the file changes."""
+    """/static/<path>?v=<short hash of the file's content>.
+
+    The address changes only when the file's content changes, so browsers fetch a fresh copy after an update and
+    keep using their saved copy otherwise. (A modified-time version changed on every website build, because each
+    GitHub build checks the files out anew, so phones re-downloaded every script and stylesheet every 10 minutes.)
+    """
+    f = PROJECT_ROOT / "static" / path
     try:
-        v = int((PROJECT_ROOT / "static" / path).stat().st_mtime)
+        info = f.stat()
+        known = _ASSET_VERSIONS.get(path)
+        if known and known[0] == info.st_mtime_ns and known[1] == info.st_size:
+            v = known[2]
+        else:
+            v = hashlib.sha256(f.read_bytes()).hexdigest()[:10]
+            _ASSET_VERSIONS[path] = (info.st_mtime_ns, info.st_size, v)
     except OSError:
-        v = 0
+        v = "0"
     return f"/static/{path}?v={v}"
 
 

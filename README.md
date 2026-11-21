@@ -143,8 +143,13 @@ GitHub builds the website from this repository with the same code and the same h
   "Export progress" / "Import progress" copies them between devices.
 - Buttons that need the server (Fetch news now, make a breakdown, Why did it move?, Explain this term, make
   quiz questions) only appear in the app on your PC. On the website these things happen automatically
-  in the builds: one breakdown about every 15 minutes, "why" for the top 3 movers, the 07:00 briefing,
+  in the builds: breakdowns for important stories, "why" for the top 3 movers, the 07:00 briefing,
   new quiz questions.
+- **AI is spread over the whole day.** Google's daily Gemini quota restarts at midnight Pacific time
+  (3:00 PM Jakarta). The website spreads its daily limit evenly over that day and keeps 20 calls free for
+  the 7:00 AM briefing, so the briefing and morning breakdowns no longer wait until the afternoon reset.
+- Every build checks all links on the pages it writes; older articles that a page links to (for example
+  glossary examples) are published too. The **Health** page shows what the latest build did.
 
 ### API keys for the website (GitHub secrets)
 

@@ -21,6 +21,7 @@ import sys
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from urllib.parse import unquote
 
 ROOT = Path(__file__).resolve().parent
 
@@ -49,17 +50,21 @@ from fastapi.testclient import TestClient  # noqa: E402
 from sqlalchemy import func, select  # noqa: E402
 
 from app.ai.gemini_client import AIError  # noqa: E402
+from app.ai.pacing import briefing_date_in_quota_day, paced_allowance  # noqa: E402
 from app.main import create_app  # noqa: E402
 from app.models.tables import AppSetting, Breakdown, NewsArticle, QuizQuestion  # noqa: E402
 from app.services.candles import RANGES  # noqa: E402
 from app.timeutil import JAKARTA, utcnow  # noqa: E402
 
-LOG = []
+LOG: list[str] = []
+ENTRIES: list[dict] = []  # the same lines with full UTC times, for the website's Health page
 
 
 def say(msg: str) -> None:
-    line = f"[{datetime.now(timezone.utc).strftime('%H:%M:%S')}] {msg}"
+    now = datetime.now(timezone.utc)
+    line = f"[{now.strftime('%H:%M:%S')}] {msg}"
     LOG.append(line)
+    ENTRIES.append({"t": now.isoformat(timespec="seconds"), "msg": msg})
     print(line, flush=True)
 
 
@@ -115,14 +120,32 @@ def collect_news(st, portal, state: dict) -> None:  # noqa: ANN001
     say(f"news: {stats.fetched} fetched, {stats.new} new, {stats.duplicates} duplicates (google={google})")
     found = portal.call(st.news.image_pass, 120)
     say(f"images: {found} found")
-    if older_than(state, "calendar", 12 * 60):
+    if older_than(state, "calendar", 12 * 60) or "calendar_status" not in state:
         n = portal.call(st.calendar.refresh)
         mark(state, "calendar")
+        state["calendar_status"] = dict(st.calendar.status)
         say(f"calendar: {n} events")
+    else:
+        # The calendar is fetched every 12 hours, not every build: show the last fetch's result on the Health page.
+        st.calendar.status.update(state["calendar_status"])
 
 
 def ai_budget_left(st) -> int:  # noqa: ANN001
     return st.settings.gemini_daily_call_limit - st.gemini.calls_today()
+
+
+# Gemini calls kept free for the 7:00 AM Jakarta briefing (it also writes breakdowns for the top 3 stories;
+# a briefing used about 10 calls in Nov 2026). The rest of the daily limit is spread over the whole quota day,
+# see app/ai/pacing.py.
+BRIEFING_RESERVE = 20
+
+
+def ai_pace(st) -> tuple[int, int, bool]:  # noqa: ANN001
+    """(calls used today, calls allowed by now, today's briefing already made)."""
+    latest = st.briefing.get()
+    briefing_done = latest is not None and latest["date"] == briefing_date_in_quota_day()
+    allowed = paced_allowance(st.settings.gemini_daily_call_limit, BRIEFING_RESERVE, briefing_done)
+    return st.gemini.calls_today(), allowed, briefing_done
 
 
 def ai_work(st, portal, state: dict, max_tasks: int) -> None:  # noqa: ANN001
@@ -136,10 +159,14 @@ def ai_work(st, portal, state: dict, max_tasks: int) -> None:  # noqa: ANN001
     now_jkt = utcnow().astimezone(JAKARTA)
     done = 0
 
-    def run(label: str, fn) -> bool:  # noqa: ANN001
+    def run(label: str, fn, paced: bool = True) -> bool:  # noqa: ANN001
         nonlocal done
         if done >= max_tasks or ai_budget_left(st) < 6:
             return False
+        if paced:
+            used, allowed, _ = ai_pace(st)
+            if used >= allowed:
+                return False
         try:
             result = fn()
             say(f"AI: {label} -> {result}")
@@ -150,10 +177,11 @@ def ai_work(st, portal, state: dict, max_tasks: int) -> None:  # noqa: ANN001
         done += 1
         return True
 
-    # 1) Daily briefing at 07:00 Jakarta (writes breakdowns for the top 3 stories too).
+    # 1) Daily briefing at 07:00 Jakarta (writes breakdowns for the top 3 stories too). Not paced: it uses the
+    #    calls kept for it.
     latest = st.briefing.get()
     if now_jkt.hour >= 7 and (latest is None or latest["date"] != now_jkt.date().isoformat()):
-        run("daily briefing", lambda: (portal.call(st.briefing.generate, True), "made")[1])
+        run("daily briefing", lambda: (portal.call(st.briefing.generate, True), "made")[1], paced=False)
     # 2) Tag unclear articles.
     if older_than(state, "ai_tagging", 20) and run("tagging", lambda: portal.call(st.news.ai_tag_pass)):
         mark(state, "ai_tagging")
@@ -187,7 +215,10 @@ def ai_work(st, portal, state: dict, max_tasks: int) -> None:  # noqa: ANN001
     concepts = [c for c in st.learning.concepts() if not c["explained"]]
     if concepts:
         run(f"explain concept {concepts[0]['slug']}", lambda: (st.learning.explain_concept(concepts[0]["slug"]), "done")[1])
-    say(f"AI calls today: {st.gemini.calls_today()}/{st.settings.gemini_daily_call_limit}")
+    used, allowed, briefing_done = ai_pace(st)
+    limit = st.settings.gemini_daily_call_limit
+    kept = "" if briefing_done else f"; {min(BRIEFING_RESERVE, limit)} kept for the 7:00 AM briefing"
+    say(f"AI calls today: {used}/{limit} (spread over the day: {min(allowed, limit)} allowed by now{kept})")
 
 
 # ---------------------------------------------------------------- export
@@ -245,7 +276,6 @@ def export(client, st, portal, out: Path) -> None:  # noqa: ANN001
     concepts = st.learning.concepts()
     dump(out, "learning.json", {"built_at": built, "lessons": lessons,
                                 "concepts": {c["slug"]: c["name"] for c in concepts}, "questions": st.learning.pool()})
-    dump(out, "meta.json", {"built_at": built, "log": LOG[-40:]})
 
     # Pages
     n = 0
@@ -267,13 +297,70 @@ def export(client, st, portal, out: Path) -> None:  # noqa: ANN001
     art_ids = [a["id"] for a in articles] + sorted(bd_ids - {a["id"] for a in articles})
     for aid in art_ids:
         n += page(client, out, f"/news/{aid}", f"news/{aid}/index.html")
-    # Price moves since publication: articles with breakdowns + the most important recent ones.
+    n += export_linked_articles(client, out, set(art_ids))
+    # Price moves since publication: articles with breakdowns + the most important recent ones. The index lets
+    # article pages know whether a file exists, instead of asking for it and getting a 404.
     top = [a["id"] for a in sorted(articles, key=lambda x: -x["rank"])[:60]]
+    with_moves = []
     for aid in sorted(set(top) | bd_ids):
         r = client.get(f"/api/articles/{aid}/moves")
         if r.status_code == 200:
             dump(out, f"moves/{aid}.json", r.json())
+            with_moves.append(aid)
+    dump(out, "moves/index.json", with_moves)
     say(f"pages: {n} written")
+    check_links(out)
+    dump(out, "meta.json", {"built_at": built, "log": LOG[-40:], "entries": ENTRIES[-40:]})
+
+
+NEWS_LINK = re.compile(r'href="' + re.escape(BASE) + r'/news/(\d+)/?["#?]')
+INTERNAL_LINK = re.compile(r'(?:href|src|data-fallback)="(' + re.escape(BASE) + r'/(?!/)[^"#?]*)')
+
+
+def export_linked_articles(client, out: Path, have: set[int]) -> int:  # noqa: ANN001
+    """Write the pages of older articles that other pages link to (for example the real news examples on
+    glossary pages), so no link on the website leads to "Not found"."""
+    n, scan = 0, list(out.rglob("*.html"))
+    for _ in range(5):  # linked pages can link to more articles; a few rounds cover that
+        want: set[int] = set()
+        for f in scan:
+            want.update(int(x) for x in NEWS_LINK.findall(f.read_text(encoding="utf-8")))
+        missing = sorted(want - have)
+        if not missing:
+            break
+        have.update(missing)
+        scan = []
+        for aid in missing:
+            target = f"news/{aid}/index.html"
+            if page(client, out, f"/news/{aid}", target):
+                n += 1
+                scan.append(out / target)
+    if n:
+        say(f"pages: {n} older articles that other pages link to")
+    return n
+
+
+def check_links(out: Path) -> None:
+    """Check every internal link and file reference in the written pages; anything missing goes into the build
+    log (and so onto the website's Health page) instead of silently showing "Not found" to a reader."""
+    prefix = BASE + "/"
+    missing: dict[str, str] = {}
+    for f in out.rglob("*.html"):
+        if f.name == "404.html":
+            continue
+        for url in INTERNAL_LINK.findall(f.read_text(encoding="utf-8")):
+            if "${" in url:  # a link built by a page script at view time, not a fixed link
+                continue
+            rel = unquote(url[len(prefix):] if url.startswith(prefix) else url.lstrip("/"))
+            target = out / rel
+            if rel in missing or target.is_file() or (target / "index.html").is_file():
+                continue
+            missing[rel] = f.relative_to(out).as_posix()
+    if missing:
+        sample = "; ".join(f"/{k} (linked on /{v})" for k, v in list(missing.items())[:5])
+        say(f"links: {len(missing)} broken - {sample}")
+    else:
+        say("links: every internal link works")
 
 
 def main() -> int:

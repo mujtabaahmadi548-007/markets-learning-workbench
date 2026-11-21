@@ -190,8 +190,13 @@
       try { return await getJSON(`why/${decodeURIComponent(m[1])}.json`); } catch (e) { return { explanation: null }; }
     }
     if ((m = p.match(/^\/api\/articles\/(\d+)\/moves$/))) {
+      const none = { moves: [{ symbol: "", error: "Price moves are pre-computed on the website only for the most important recent articles." }] };
+      // moves/index.json lists the articles that have a file, so other articles don't request one and get a 404.
+      let have = null;
+      try { have = await getJSON("moves/index.json"); } catch (e) { have = null; }
+      if (Array.isArray(have) && !have.includes(Number(m[1]))) return none;
       try { return await getJSON(`moves/${m[1]}.json`); }
-      catch (e) { return { moves: [{ symbol: "", error: "Price moves are pre-computed on the website only for the most important recent articles." }] }; }
+      catch (e) { return none; }
     }
     if (p === "/api/quiz/next") return quizNext(q.get("mode") || "today", Number(q.get("limit") || 10));
     if (p === "/api/quiz/answer") return quizAnswer(body);

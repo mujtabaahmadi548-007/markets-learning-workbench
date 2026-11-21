@@ -3,7 +3,7 @@
 {% block content %}
 <section class="page-head">
   <h1>Health</h1>
-  <p class="muted">Server time: <time data-utc="{{ h.server_time_utc }}">{{ h.server_time_utc }}</time></p>
+  <p class="muted">{{ "Website built" if site.static else "Server time" }}: <time data-utc="{{ h.server_time_utc }}">{{ h.server_time_utc }}</time></p>
 </section>
 
 <div class="grid-2">
@@ -26,7 +26,7 @@
       <tbody>
         <tr><td>Size</td><td class="num">{{ "%.1f"|format(h.database_bytes / 1024) }} KB</td></tr>
         <tr><td>Schema version</td><td class="num">{{ h.schema_version }}</td></tr>
-        <tr><td>LAN access</td><td>{{ "On (phone can connect)" if h.lan_access else "Off (this PC only)" }}</td></tr>
+        {% if not site.static %}<tr><td>LAN access</td><td>{{ "On (phone can connect)" if h.lan_access else "Off (this PC only)" }}</td></tr>{% endif %}
         <tr><td>Unofficial sources</td><td>{{ "Allowed as last fallback" if h.allow_unofficial_sources else "Off" }}</td></tr>
       </tbody>
     </table>
@@ -35,8 +35,12 @@
 
 <section class="card">
   <h2>Data providers</h2>
+  {% if site.static %}
+  <p class="muted small">As seen by the latest website build. Crypto prices on the website come straight from Binance into your browser.</p>
+  {% else %}
   <p class="muted small">"Switch off" makes the app stop using a source so you can watch the automatic fallback
     (for example, switch off Binance and BTC moves to Gate.io within seconds). It stays off until you switch it on again.</p>
+  {% endif %}
   <div class="table-wrap">
   <table class="table">
     <thead><tr><th>Provider</th><th>Status</th><th>Used for</th><th>Stream</th><th>Last success</th><th>Last error</th><th>Errors</th><th>Message</th><th></th></tr></thead>
@@ -57,7 +61,7 @@
     </tbody>
   </table>
   </div>
-  <p class="muted small">To check every source by hand, stop the app and run <code>python scripts\test_providers.py</code>.</p>
+  {% if not site.static %}<p class="muted small">To check every source by hand, stop the app and run <code>python scripts\test_providers.py</code>.</p>{% endif %}
 </section>
 
 <section class="card">
@@ -81,6 +85,13 @@
   </details>
 </section>
 
+{% if site.static %}
+<section class="card">
+  <h2>Latest website build</h2>
+  <p class="muted small">GitHub rebuilds this website about every 10 minutes. What the latest build did:</p>
+  <ul class="build-log small" id="build-log" style="list-style:none;padding:0;margin:0;overflow-wrap:anywhere"><li class="muted">Loading…</li></ul>
+</section>
+{% else %}
 <section class="card">
   <h2>Scheduled jobs</h2>
   {% if h.jobs %}
@@ -98,6 +109,7 @@
   <p class="muted">No scheduled job has run yet.</p>
   {% endif %}
 </section>
+{% endif %}
 {% endblock %}
 {% block scripts %}
 <script>
@@ -107,5 +119,13 @@
     location.reload();
   }));
   if (!window.MLW_STATIC) setTimeout(() => location.reload(), 30000);
+  const buildLog = document.getElementById("build-log");
+  if (buildLog) {
+    fetch(MLW.base + "/data/meta.json", { cache: "no-cache" }).then((r) => r.json()).then((m) => {
+      const rows = (m.entries || []).map((e) => `<li><time data-utc="${MLW.esc(e.t)}"></time> · ${MLW.esc(e.msg)}</li>`);
+      buildLog.innerHTML = rows.join("") || '<li class="muted">No log yet.</li>';
+      MLW.renderTimes(buildLog);
+    }).catch(() => { buildLog.innerHTML = '<li class="muted">The build log could not be loaded.</li>'; });
+  }
 </script>
 {% endblock %}

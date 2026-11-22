@@ -33,8 +33,9 @@
       if (!iso) return;
       const d = new Date(iso);
       if (isNaN(d)) return;
-      el.textContent = formatJakarta(d);
-      el.title = utcLabel(d);
+      // data-daily: a daily value (only its date is known), shown without a time of day
+      el.textContent = el.hasAttribute("data-daily") ? dateOnly(d) : formatJakarta(d);
+      el.title = el.hasAttribute("data-daily") ? "Daily value: only the date is known" : utcLabel(d);
       el.setAttribute("datetime", d.toISOString());
     });
   }
@@ -137,6 +138,7 @@
   function sourceFlags(q) {
     const f = [];
     if (q.fallback) f.push('<span class="chip chip-warn" title="The main source is not working; a backup source is in use">fallback</span>');
+    if (q.newer_note) f.push(`<span class="chip" title="${esc(q.newer_note)}">newer data</span>`);
     if (q.is_unofficial) f.push('<span class="chip" title="Unofficial source (Yahoo). Personal use only; may be delayed">unofficial</span>');
     if (q.is_proxy) f.push('<span class="chip" title="Stand-in instrument, not the asset itself">proxy</span>');
     return f.join(" ");

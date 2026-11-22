@@ -34,7 +34,7 @@ Version 1.1 — all stages (0–7) built, plus the new design and article images
 | **Learn** `/learn` | 5 learning paths (Gold, Oil, Crypto, Stocks, Macro) × 4 lessons. Each lesson shows today's real news and live prices as examples. |
 | **Glossary** `/glossary` | ~65 concepts (more are added automatically from breakdowns). Each is explained once by AI, stored and editable. Shows how often you've seen it and your mastery. |
 | **Quiz** `/quiz` | Modes: Today's news, Concepts & lessons, Review (spaced repetition), Weak topics. Score history and weakest topics. |
-| **Briefing** `/briefing` | Daily at 07:00 Jakarta (or on demand): prices table, top 5 stories, 3-sentence "what to watch", calendar, 3 review questions. Past briefings are kept. |
+| **Briefing** `/briefing` | Daily at 07:00 Jakarta (or on demand): prices table, top 5 stories, 3-sentence "what to watch", calendar, 3 review questions. On the newest briefing the crypto rows update live (same feed as the Dashboard) with the stored briefing price under each one. Past briefings are kept as they were. |
 | **Alerts** `/alerts` | Price above / below / move of at least X %. Browser notifications + on-page message. |
 | **Demo trading** `/demo` | Open **as many pretend trades as you like, up to $1,000,000,000 each** (one at a time, or several at once), in crypto, gold, silver, oil, gas, stocks or ETFs at the **real live price**. Every trade gets **its own tab**; **All trades** shows them side by side with live mini charts. A trade's tab has a detailed **candlestick chart** (1m / 5m / 15m / 1h / 4h / 1D, candles or line, volume, MA 20/50, EMA 20, Bollinger Bands, RSI 14; buy/add/sell markers, buy / take-profit / stop-loss lines, O-H-L-C legend with what your trade is worth at each candle) and a side panel (value, profit/loss, quantity, buy price, every-1%-move, best/worst since buy, time held, sources; sell 25% / 50% / all, add more, take-profit / stop-loss). Crypto candles are Binance's, streamed live; other assets use the app's stored candles. Orders fill only while the price is LIVE or DELAYED; no fees, spread or slippage (said on the page). Saved in your browser; export/import. Not real money, not advice. |
 | **Settings** `/settings` | Watchlist (on/off, reorder, add a US stock/ETF or crypto coin), AI models, daily AI limit, automatic breakdowns per hour, news interval, LAN access, unofficial sources, key status. |
@@ -218,10 +218,16 @@ MEXC, Swissquote. The app does not get around the block; it uses sources that wo
 | US stocks, SPY, QQQ | Finnhub trade stream + quote → Twelve Data → Yahoo (unofficial) | **LIVE** in US hours (21:30–04:00 WIB in winter) | Twelve Data with key, else Yahoo |
 | Gold, silver | Finnhub OANDA stream → gold-api.com (every 15 s) | **LIVE** | PAX Gold token (**proxy**); silver: COMEX futures via Yahoo (**proxy**) |
 | WTI, Brent, natural gas | Finnhub OANDA stream → Yahoo futures (~10 min delayed) → EIA spot via FRED (daily) | **LIVE** when OANDA ticks | Yahoo futures, else EIA daily |
-| S&P 500, Nasdaq index | FRED daily (official) → Yahoo | Daily | FRED |
+| S&P 500, Nasdaq index | FRED daily (official) + Yahoo, **newer trading day wins** | Daily, or delayed intraday from Yahoo | FRED |
 | US Dollar Index (DXY) | Yahoo only — **no free official source** | ~10 min delayed | Yahoo |
-| US 10-year yield | US Treasury (official, end of day) → Yahoo `^TNX` | Daily | US Treasury |
+| US 10-year yield | US Treasury (official, end of day) + Yahoo `^TNX`, **newer trading day wins** | Daily, or delayed intraday from Yahoo | US Treasury |
 | Fed Broad Dollar Index | FRED (official) | Daily values, published weekly | FRED |
+
+**Newer trading day wins:** FRED posts the S&P 500 and Nasdaq closes the next business day (Friday's close
+appears on Monday), and the Treasury posts yields after the close. So for these three both sources are asked,
+and the one with the newer US trading day is shown, e.g. Yahoo's Friday close all weekend instead of FRED's
+Thursday value. On the same day the official source is shown. The price then carries a **newer data** chip whose
+tooltip names both dates; it is not a "fallback", because nothing failed.
 
 **News:** 33 RSS feeds (Cointelegraph, The Block, Decrypt, CoinDesk, OilPrice, EIA, Bloomberg, WSJ,
 MarketWatch, CNBC, Investing.com, Seeking Alpha, Benzinga, Guardian, BBC, Federal Reserve, ECB, Yahoo Finance

@@ -29,8 +29,11 @@ def briefing_page(request: Request, day: str | None = None) -> HTMLResponse:
         saved = [s["id"] for s in b["content"].get("stories", [])]
         current = {x["id"]: x for x in st.news.query(ids=saved, hours=None, limit=len(saved) or 1)}
         stories = [current[i] for i in saved if i in current]
-    return templates.TemplateResponse(request, "briefing.html", _ctx(request, "/briefing", b=b, dates=st.briefing.dates(),
-                                                                      stories=stories,
+    dates = st.briefing.dates()
+    # Only the newest briefing gets live crypto prices; older ones stay a record of their own day.
+    live_crypto = bool(b and dates and b["date"] == dates[0])
+    return templates.TemplateResponse(request, "briefing.html", _ctx(request, "/briefing", b=b, dates=dates,
+                                                                      stories=stories, live_crypto=live_crypto,
                                                                       events=st.calendar.upcoming(24 * 14, 6),
                                                                       ai_ready=st.gemini.configured))
 

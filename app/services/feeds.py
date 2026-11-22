@@ -8,6 +8,9 @@ How a price is chosen for each asset (every second):
    their own timer. Finnhub's REST quote adds previous close and day range to its trade stream.
 3. When a source fails, it cools down (5 s, 10 s, 20 s ... 5 min) and the next one takes over.
    The primary is retried automatically when its cooldown ends.
+4. Official daily sources (FRED, US Treasury) publish after the close, often the next business day. When such a
+   source comes first and an intraday source follows it in the chain (Yahoo for SPX, IXIC, US10Y), both are polled
+   and the one with the newer US trading day is shown; on the same day the official source wins.
 Every value shown comes from a source response (or simple arithmetic on those values).
 """
 from __future__ import annotations
@@ -32,7 +35,7 @@ from app.services import market_hours as mh
 from app.services import status as st
 from app.services.assets import AssetRT, ChainEntry
 from app.services.provider_health import ProviderHealth
-from app.timeutil import utcnow
+from app.timeutil import NEW_YORK, utcnow
 
 log = logging.getLogger(__name__)
 
@@ -67,6 +70,7 @@ class LiveQuote:
     is_proxy: bool = False
     is_unofficial: bool = False
     fallback: bool = False
+    newer_note: str | None = None  # why a later source is shown although the official daily one works
     poll_interval: float = 60.0
     expected_delay: float = 0.0
     max_age_days: int | None = None  # daily series published less often (e.g. weekly) get a longer STALE limit
@@ -178,6 +182,11 @@ class FeedManager:
         self.runners: dict[str, StreamRunner] = {n: StreamRunner(p, self) for n, p in providers.items() if p.can_stream}
         self.broadcaster = Broadcaster()
         self.active: dict[int, tuple[int, ChainEntry] | None] = {}
+        # Daily source + intraday backup: the entry polled alongside the shown one, and why the backup is shown.
+        self.companion: dict[int, ChainEntry] = {}
+        self.newer: dict[int, str] = {}
+        # Last answer from each polled source, (asset, provider, symbol) -> (quote, monotonic time received).
+        self.latest: dict[tuple[int, str, str], tuple[QuoteData, float]] = {}
         self.next_poll: dict[tuple[int, str], float] = {}
         self.polling: set[tuple[int, str]] = set()
         self.dirty: set[int] = set()
@@ -277,7 +286,7 @@ class FeedManager:
                 out.append((i, e, p))
         return out
 
-    def _choose(self, asset: AssetRT, market_open: bool) -> tuple[int, ChainEntry] | None:
+    def _first_usable(self, asset: AssetRT, market_open: bool) -> tuple[int, ChainEntry] | None:
         for i, e, p in self._configured_entries(asset):
             if not self.health[p.name].symbol_available(e.symbol):
                 continue
@@ -287,6 +296,44 @@ class FeedManager:
                 continue
             return i, e
         return None
+
+    def _intraday_after(self, asset: AssetRT, idx: int) -> tuple[int, ChainEntry] | None:
+        """The first usable polled (not daily, not streaming) source after position idx in the chain."""
+        for j, e, p in self._configured_entries(asset):
+            if j > idx and p.kind != "daily" and not p.can_stream and self.health[p.name].symbol_available(e.symbol):
+                return j, e
+        return None
+
+    def _choose(self, asset: AssetRT, market_open: bool) -> tuple[int, ChainEntry] | None:
+        """The source to show. A daily official source (FRED, US Treasury) gives way to the intraday source after it
+        when that one already has a newer US trading day (e.g. Friday's close while FRED still ends on Thursday)."""
+        first = self._first_usable(asset, market_open)
+        self.companion.pop(asset.id, None)
+        self.newer.pop(asset.id, None)
+        if first is None or self.providers[first[1].provider].kind != "daily":
+            return first
+        alt = self._intraday_after(asset, first[0])
+        if alt is None:
+            return first
+        daily_e, alt_e = first[1], alt[1]
+        got_alt = self.latest.get((asset.id, alt_e.provider, alt_e.symbol))
+        got_daily = self.latest.get((asset.id, daily_e.provider, daily_e.symbol))
+        daily_ts = got_daily[0].source_timestamp if got_daily else None
+        if daily_ts is None:
+            lq = self.quotes[asset.id]
+            if lq.provider == daily_e.provider and lq.provider_symbol == daily_e.symbol:
+                daily_ts = lq.source_timestamp  # restored from the database at start
+        # Daily values are stamped 00:00 UTC of their date; intraday times are compared by their New York date.
+        if got_alt is None or daily_ts is None or got_alt[0].source_timestamp.astimezone(NEW_YORK).date() <= daily_ts.date():
+            self.companion[asset.id] = alt_e
+            return first
+        dp, ap = self.providers[daily_e.provider], self.providers[alt_e.provider]
+        d, a = daily_ts.date(), got_alt[0].source_timestamp.astimezone(NEW_YORK).date()
+        self.newer[asset.id] = (f"{dp.label} has published values up to {d.day} {d:%b %Y} so far (it publishes after the "
+                                f"close, often the next business day). {ap.label} already has {a.day} {a:%b %Y}, "
+                                "so its newer price is shown.")
+        self.companion[asset.id] = daily_e
+        return alt
 
     # ------------------------------------------------------------------ supervisor
     async def _supervisor_loop(self) -> None:
@@ -319,26 +366,42 @@ class FeedManager:
             prev = self.active.get(asset.id)
             self._hold_off_silent_stream(asset, prev, mo)
             choice = self._choose(asset, mo)
+            self.active[asset.id] = choice
             if (prev and prev[1]) != (choice and choice[1]):
                 if choice:
                     log.info("%s: price source -> %s %s", asset.symbol, choice[1].provider, choice[1].symbol)
-                    self.next_poll[(asset.id, choice[1].provider)] = 0.0
+                    p = self.providers[choice[1].provider]
+                    got = self.latest.get((asset.id, p.name, choice[1].symbol))
+                    if got is not None and not p.can_stream and now - got[1] < p.poll_interval:
+                        self._apply(asset, choice[1], p, got[0], "full")  # answered recently: show it right away
+                    else:
+                        self.next_poll[(asset.id, choice[1].provider)] = 0.0
                 else:
                     log.warning("%s: no usable price source right now", asset.symbol)
                 self.dirty.add(asset.id)
-            self.active[asset.id] = choice
             if not choice:
                 continue
             _, entry = choice
             p = self.providers[entry.provider]
             needs_poll = not p.can_stream or (p.name == "finnhub" and ":" not in entry.symbol)
-            key = (asset.id, p.name)
-            if needs_poll and key not in self.polling and now >= self.next_poll.get(key, 0.0):
-                self.polling.add(key)
-                mode = "stats" if p.can_stream else "full"
-                task = asyncio.create_task(self._poll(asset, entry, p, mode), name=f"poll-{asset.symbol}-{p.name}")
-                self._poll_tasks.add(task)
-                task.add_done_callback(self._poll_tasks.discard)
+            if needs_poll:
+                self._start_poll(asset, entry, p, "stats" if p.can_stream else "full", now)
+            other = self.companion.get(asset.id)
+            if other is not None:  # daily source + intraday backup: keep both answers current
+                self._start_poll(asset, other, self.providers[other.provider], "full", now)
+
+    def _start_poll(self, asset: AssetRT, entry: ChainEntry, p: Provider, mode: str, now: float) -> None:
+        key = (asset.id, p.name)
+        if key in self.polling or now < self.next_poll.get(key, 0.0):
+            return
+        self.polling.add(key)
+        task = asyncio.create_task(self._poll(asset, entry, p, mode), name=f"poll-{asset.symbol}-{p.name}")
+        self._poll_tasks.add(task)
+        task.add_done_callback(self._poll_tasks.discard)
+
+    def _is_active(self, asset_id: int, entry: ChainEntry) -> bool:
+        act = self.active.get(asset_id)
+        return act is not None and act[1] == entry
 
     def _hold_off_silent_stream(self, asset: AssetRT, prev: tuple[int, ChainEntry] | None, market_open: bool) -> None:
         """A connected stream that went quiet for one symbol is skipped for 5 min (doubling up to 1 h), so the
@@ -360,31 +423,37 @@ class FeedManager:
                      asset.symbol, p.label, entry.symbol, int(min(3600.0, 300.0 * 2 ** (n - 1)) // 60))
 
     async def _poll(self, asset: AssetRT, entry: ChainEntry, p: Provider, mode: str) -> None:
+        """Ask one source. Its answer is shown only if it is still the asset's chosen source when the answer
+        arrives (a daily source's companion is polled too, but only compared)."""
         key = (asset.id, p.name)
         health = self.health[p.name]
         try:
             q = await asyncio.wait_for(p.get_quote(entry.symbol), timeout=30)
             health.record_success(entry.symbol)
-            self._apply(asset, entry, p, q, mode)
+            self.latest[(asset.id, p.name, entry.symbol)] = (q, time.monotonic())
+            if self._is_active(asset.id, entry):
+                self._apply(asset, entry, p, q, mode)
         except ProviderRateLimited as e:
             health.record_error(str(e), entry.symbol, provider_wide=True)
-            self._note_error(asset, p, str(e))
+            self._note_error(asset, p, str(e), entry)
         except ProviderError as e:
             health.record_error(str(e), entry.symbol)
-            self._note_error(asset, p, str(e))
+            self._note_error(asset, p, str(e), entry)
         except asyncio.TimeoutError:
             health.record_error(f"{p.label}: no answer within 30 s", entry.symbol)
-            self._note_error(asset, p, "no answer within 30 s")
+            self._note_error(asset, p, "no answer within 30 s", entry)
         except Exception as e:  # noqa: BLE001
             msg = redact(f"{type(e).__name__}: {e}")[:200]
             log.exception("poll %s %s failed", p.name, entry.symbol)
             health.record_error(f"{p.label}: {msg}", entry.symbol)
-            self._note_error(asset, p, msg)
+            self._note_error(asset, p, msg, entry)
         finally:
             self.polling.discard(key)
             self.next_poll[key] = time.monotonic() + p.poll_interval
 
-    def _note_error(self, asset: AssetRT, p: Provider, message: str) -> None:
+    def _note_error(self, asset: AssetRT, p: Provider, message: str, entry: ChainEntry | None = None) -> None:
+        if entry is not None and not self._is_active(asset.id, entry):
+            return  # a source that is not shown failed: its health records it, the shown price is unaffected
         lq = self.quotes[asset.id]
         lq.last_error_at = utcnow()
         lq.error_message = message if message.startswith(p.label) else f"{p.label}: {message}"
@@ -445,7 +514,9 @@ class FeedManager:
         lq.kind, lq.poll_interval, lq.expected_delay = p.kind, p.poll_interval, p.expected_delay
         lq.entry_note, lq.is_proxy, lq.is_unofficial = entry.note, entry.proxy, p.unofficial
         lq.max_age_days = entry.max_age_days
-        lq.fallback = first_idx is not None and idx > first_idx
+        # A newer source chosen over a working daily one is not a fallback (nothing failed); say why it is shown.
+        lq.newer_note = self.newer.get(asset.id) if self._is_active(asset.id, entry) else None
+        lq.fallback = first_idx is not None and idx > first_idx and lq.newer_note is None
         now = utcnow()
         lq.received_at = lq.last_success_at = now
         self.dirty.add(asset.id)
@@ -491,7 +562,7 @@ class FeedManager:
             "quote_currency": lq.quote_currency,
             "provider": lq.provider, "provider_symbol": lq.provider_symbol, "source": lq.provider_label,
             "source_note": lq.entry_note, "kind": lq.kind, "is_proxy": lq.is_proxy, "is_unofficial": lq.is_unofficial,
-            "fallback": lq.fallback,
+            "fallback": lq.fallback, "newer_note": lq.newer_note,
             "status": res.status, "status_label": res.label, "status_detail": res.detail,
             "source_timestamp": iso(lq.source_timestamp), "received_at": iso(lq.received_at),
             "last_success_at": iso(lq.last_success_at), "last_error_at": iso(lq.last_error_at),
@@ -634,6 +705,10 @@ class FeedManager:
                 self.quotes.pop(aid, None)
                 self.active.pop(aid, None)
                 self.last_sent.pop(aid, None)
+                self.companion.pop(aid, None)
+                self.newer.pop(aid, None)
+                for k in [k for k in self.latest if k[0] == aid]:
+                    self.latest.pop(k, None)
         for aid, a in enabled.items():
             self.assets[aid] = a
             self.quotes.setdefault(aid, LiveQuote(asset_id=aid))

@@ -28,21 +28,31 @@
 </section>
 
 <section class="card">
+  {% if live_crypto %}
+  <h2>Prices</h2>
+  <p class="small muted">Crypto rows update live in this page from the same feed as the Dashboard (change over 24 hours), with the
+    price stored at briefing time shown under each one. Other rows are the real quotes stored when the briefing was made
+    (change vs the previous close or previous day).</p>
+  {% else %}
   <h2>Prices at briefing time</h2>
   <p class="small muted">Real stored quotes copied when the briefing was made. Crypto changes are over 24 hours; others vs the previous close or previous day.</p>
-  <div class="table-wrap"><table class="table">
+  {% endif %}
+  <div class="table-wrap"><table class="table" id="brief-prices">
     <thead><tr><th>Asset</th><th class="r">Price</th><th class="r">Change</th><th>Status</th><th>Source · time</th></tr></thead>
     <tbody>
     {% for m in c.moves %}
-      <tr>
+      {% set pct = m.change_pct %}
+      {% if m.currency == "%" %}{% set dir = m.change or 0 %}{% else %}{% set dir = pct if pct is not none and pct|abs >= 0.005 else 0 %}{% endif %}
+      <tr data-symbol="{{ m.symbol }}"{% if live_crypto and m.asset_class == "crypto" %} data-live data-ts="{{ m.source_timestamp or '' }}"{% endif %}>
         <td><a href="/asset/{{ m.symbol }}">{{ m.symbol }}</a> <span class="small muted">{{ m.name }}</span></td>
-        <td class="r num">{% if m.price is not none %}{{ "{:,.{}f}".format(m.price, m.decimals) }}{% if m.currency == "%" %}%{% endif %}{% else %}—{% endif %}</td>
-        <td class="r num {{ 'up' if (m.change or 0) > 0 else ('down' if (m.change or 0) < 0 else '') }}">
+        <td class="r num" data-f="price">{% if m.price is not none %}{{ "{:,.{}f}".format(m.price, m.decimals) }}{% if m.currency == "%" %}%{% endif %}{% else %}—{% endif %}</td>
+        <td class="r num {{ 'up' if dir > 0 else ('down' if dir < 0 else '') }}" data-f="change">
           {% if m.currency == "%" and m.change is not none %}{{ "{:+.2f}".format(m.change) }} pp
-          {% elif m.change_pct is not none %}{{ "▲ +" if m.change_pct > 0 else ("▼ " if m.change_pct < 0 else "■ ") }}{{ "{:.2f}".format(m.change_pct) }}%
+          {% elif pct is not none %}{{ "▲ +" if dir > 0 else ("▼ −" if dir < 0 else "■ ") }}{{ "{:.2f}".format(pct|abs) }}%
           {% else %}—{% endif %}</td>
-        <td class="small">{{ m.status.replace("_", " ") }}</td>
-        <td class="small muted">{{ m.source or "—" }}{% if m.source_timestamp %} · <time data-utc="{{ m.source_timestamp }}">{{ m.source_timestamp }}</time>{% endif %}</td>
+        <td class="small" data-f="status" title="Status when the briefing was made">{{ m.status.replace("_", " ") }}</td>
+        <td class="small muted" data-f="source">{{ m.source or "—" }}{% if m.newer_note %} <span class="chip" title="{{ m.newer_note }}">newer data</span>{% endif %}
+          {%- if m.source_timestamp %} · {% if m.kind == "daily" %}value for <time data-utc="{{ m.source_timestamp }}" data-daily>{{ m.source_timestamp[:10] }}</time>{% else %}<time data-utc="{{ m.source_timestamp }}">{{ m.source_timestamp }}</time>{% endif %}{% endif %}</td>
       </tr>
     {% endfor %}
     </tbody>
@@ -91,6 +101,52 @@
   };
   const past = document.getElementById("past");
   if (past) past.onchange = () => { location.href = M.isStatic ? `${M.base}/briefing/${past.value}/` : "/briefing?day=" + past.value; };
+
+  // Live crypto rows (newest briefing only): the same live feed as the Dashboard (Binance in this browser on the website,
+  // the app's own stream locally). The stored briefing quote stays until a newer price arrives and is kept as a note.
+  const rows = new Map();
+  document.querySelectorAll("#brief-prices tr[data-live]").forEach((tr) => {
+    const cell = tr.querySelector('[data-f="price"]');
+    rows.set(tr.dataset.symbol, { tr, ts: Date.parse(tr.dataset.ts || "") || 0, stored: cell.textContent.trim(), q: null });
+  });
+  if (!rows.size) return;
+
+  function setCell(tr, f, html, cls) {
+    const el = tr.querySelector(`[data-f="${f}"]`);
+    if (!el) return null;
+    if (el.dataset.html !== html) { el.innerHTML = html; el.dataset.html = html; }
+    if (cls !== undefined && el.className !== cls) el.className = cls;
+    return el;
+  }
+  function paint(r) {
+    const q = r.q, ts = new Date(q.source_timestamp);
+    const pct = q.change_pct, has = pct !== null && pct !== undefined;
+    const up = has && pct >= 0.005, down = has && pct <= -0.005;
+    const change = has ? `<span title="Change over 24 hours (${M.esc(q.source || "")})">${up ? "▲ +" : down ? "▼ −" : "■ "}${M.fmtNum(Math.abs(pct), 2)}%</span>` : "—";
+    const b = M.badge(q);
+    setCell(r.tr, "price", `${M.fmtPrice(q)}<div class="small muted" title="Stored when the briefing was made">at briefing ${M.esc(r.stored)}</div>`);
+    setCell(r.tr, "change", change, `r num ${up ? "up" : down ? "down" : ""}`);
+    const st = setCell(r.tr, "status", `<span class="badge ${b.cls}" title="${M.esc(b.title)}">${M.esc(b.text)}</span>`);
+    if (st) st.removeAttribute("title");
+    setCell(r.tr, "source", `<span title="${M.esc(q.source_note || "")}">${M.esc(q.source || "—")}</span> · ` +
+      `<span title="${M.esc(M.utcLabel(ts))}">${M.esc(M.formatJakarta(ts))}</span>`);
+  }
+  function update(q) {
+    const r = rows.get(q.symbol);
+    if (!r || q.asset_class !== "crypto" || q.price === null || q.price === undefined || !q.source_timestamp) return;
+    if (Date.parse(q.source_timestamp) < r.ts) return;  // never replace the stored quote with an older one
+    const prev = r.q && r.q.price;
+    r.q = q;
+    paint(r);
+    if (prev !== null && prev !== undefined && prev !== q.price) {
+      const cell = r.tr.querySelector('[data-f="price"]');
+      cell.classList.remove("flash-up", "flash-down");
+      void cell.offsetWidth; // restart the animation
+      cell.classList.add(q.price > prev ? "flash-up" : "flash-down");
+    }
+  }
+  M.onLive((msg) => { if (msg.type === "snapshot" || msg.type === "quotes") msg.quotes.forEach(update); });
+  setInterval(() => rows.forEach((r) => { if (r.q) paint(r); }), 1000);  // keeps badge ages current
 })();
 </script>
 {% endblock %}

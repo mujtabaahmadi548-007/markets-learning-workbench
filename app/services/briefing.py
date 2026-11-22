@@ -54,7 +54,8 @@ class BriefingService:
         for v in self.feeds.views():
             moves.append({k: v.get(k) for k in ("symbol", "name", "asset_class", "decimals", "currency", "price", "change",
                                                  "change_pct", "change_basis", "quote_currency", "status", "source",
-                                                 "source_timestamp", "kind", "is_proxy", "is_unofficial")})
+                                                 "source_timestamp", "kind", "is_proxy", "is_unofficial", "fallback",
+                                                 "newer_note")})
         stories = await asyncio.to_thread(self.news.query, hours=24, sort="important", limit=5, distinct_stories=True)
         # The 07:00 run also writes breakdowns for the top 3 stories (within the AI budget). On-demand runs skip
         # this to stay quick; the story links open the article page, where a breakdown is one click away.

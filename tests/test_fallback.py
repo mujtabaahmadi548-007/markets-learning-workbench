@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 from app.db.migrations import init_db
@@ -119,6 +120,61 @@ def test_all_sources_failing_shows_error_not_fake_price(tmp_path: Path) -> None:
         await settle(mgr, 3)
         q = mgr.view(1)
         assert q["price"] is None and q["status"] == "ERROR" and "simulated outage" in q["status_detail"]
+
+    asyncio.run(run())
+
+
+class FakeAt(Provider):
+    """A polled source whose answer has a fixed time (daily sources: 00:00 UTC of the value's date)."""
+
+    def __init__(self, name: str, kind: str, price: float, ts: datetime) -> None:
+        super().__init__(http=None)  # type: ignore[arg-type]
+        self.name, self.label, self.kind, self.price, self.ts, self.fail = name, f"Fake {name}", kind, price, ts, False
+        self.poll_interval = 0.01
+
+    async def get_quote(self, symbol: str) -> QuoteData:
+        if self.fail:
+            raise ProviderError(f"{self.label}: simulated outage")
+        return QuoteData(price=self.price, source_timestamp=self.ts, change=-1.0, change_pct=-0.1, prev_close=self.price + 1)
+
+
+THU = datetime(2026, 11, 19, tzinfo=timezone.utc)  # FRED-style stamp for Thursday's value
+FRI = datetime(2026, 11, 20, tzinfo=timezone.utc)
+FRI_CLOSE = datetime(2026, 11, 20, 21, 35, tzinfo=timezone.utc)  # Friday 4:35 PM New York
+
+
+def test_newer_intraday_close_beats_lagging_daily_source(tmp_path: Path) -> None:
+    async def run() -> None:
+        fred, yahoo = FakeAt("fred", "daily", 7175.83, THU), FakeAt("yahoo", "poll", 6910.39, FRI_CLOSE)
+        mgr = make(tmp_path, [ChainEntry("fred", "SP500"), ChainEntry("yahoo", "^GSPC")], {"fred": fred, "yahoo": yahoo},
+                   schedule=mh.US_EQUITY)
+        await settle(mgr, 4)
+        q = mgr.view(1)
+        assert q["provider"] == "yahoo" and q["price"] == 6910.39
+        assert q["fallback"] is False and "19 Nov 2026" in q["newer_note"] and "20 Nov 2026" in q["newer_note"]
+
+        fred.ts, fred.price = FRI, 6910.39  # FRED publishes Friday: the official source is shown again
+        mgr.next_poll.clear()
+        await settle(mgr, 4)
+        q = mgr.view(1)
+        assert q["provider"] == "fred" and q["newer_note"] is None and q["fallback"] is False
+
+    asyncio.run(run())
+
+
+def test_daily_source_kept_when_backup_is_not_newer_or_fails(tmp_path: Path) -> None:
+    async def run() -> None:
+        tsy, yahoo = FakeAt("treasury", "daily", 4.92, FRI), FakeAt("yahoo", "poll", 4.912, FRI_CLOSE)
+        mgr = make(tmp_path, [ChainEntry("treasury", "10 Yr"), ChainEntry("yahoo", "^TNX")], {"treasury": tsy, "yahoo": yahoo},
+                   schedule=mh.US_EQUITY)
+        await settle(mgr, 4)
+        assert mgr.view(1)["provider"] == "treasury"  # same trading day: official wins
+
+        yahoo.fail = True
+        mgr.next_poll.clear()
+        await settle(mgr, 4)
+        q = mgr.view(1)
+        assert q["provider"] == "treasury" and q["price"] == 4.92 and q["error_message"] is None and q["status"] != "ERROR"
 
     asyncio.run(run())
 

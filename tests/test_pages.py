@@ -32,6 +32,36 @@ def test_all_pages_render() -> None:
         assert c.get("/api/assets/NOPE").status_code == 404
 
 
+def test_briefing_live_crypto_only_on_newest_briefing() -> None:
+    from datetime import date
+
+    get_settings.cache_clear()
+    moves = [
+        {"symbol": "BTC", "name": "Bitcoin", "asset_class": "crypto", "decimals": 2, "currency": "USD", "price": 60000.0,
+         "change": 600.0, "change_pct": 1.0, "status": "LIVE", "source": "Binance", "kind": "stream",
+         "source_timestamp": "2026-11-21T08:06:37+00:00"},
+        {"symbol": "SPX", "name": "S&P 500 index", "asset_class": "index", "decimals": 2, "currency": "USD", "price": 6910.39,
+         "change": -265.44, "change_pct": -3.7, "status": "MARKET_CLOSED", "source": "Yahoo Finance (unofficial)",
+         "kind": "poll", "source_timestamp": "2026-11-20T21:35:54+00:00", "newer_note": "FRED ends on 19 Nov."},
+        {"symbol": "US10Y", "name": "US 10-year Treasury yield", "asset_class": "macro", "decimals": 2, "currency": "%",
+         "price": 4.92, "change": -0.12, "change_pct": None, "status": "DELAYED", "source": "US Treasury", "kind": "daily",
+         "source_timestamp": "2026-11-20T00:00:00+00:00"},
+    ]
+    content = {"generated_at": "2026-11-21T08:07:27+00:00", "moves": moves, "stories": [], "events": [],
+               "what_to_watch": [], "watch_note": "", "watch_validated": True, "review": []}
+    with TestClient(create_app()) as c:
+        st = c.app.state.mlw
+        st.briefing._save(date(2026, 11, 20), content)
+        st.briefing._save(date(2026, 11, 21), content)
+        newest = c.get("/briefing").text
+        assert '<tr data-symbol="BTC" data-live data-ts="2026-11-21T08:06:37+00:00">' in newest
+        assert 'data-symbol="SPX" data-live' not in newest and 'title="FRED ends on 19 Nov."' in newest
+        assert "value for <time" in newest and "data-daily" in newest and "▼ −3.70%" in newest
+        assert c.get("/briefing?day=2026-11-21").text.count(" data-live data-ts=") == 1
+        older = c.get("/briefing?day=2026-11-20").text
+        assert " data-live data-ts=" not in older and "Prices at briefing time" in older
+
+
 def test_ai_endpoints_explain_missing_key() -> None:
     get_settings.cache_clear()
     with TestClient(create_app()) as c:

@@ -4,13 +4,16 @@ Ranges -> candle size:  1D -> 5m,  1W -> 1h,  1M -> 1h,  6M -> 1d,  1Y -> 1d.
 Candles are fetched from a provider only when the stored ones are older than that provider's TTL
 (and not at all while the market is closed and we already have data after the close), which keeps
 free-plan credits low. One chart always shows ONE source (never mixed), named on the chart.
-Sources with daily values only (FRED, US Treasury) are drawn as a line.
+Sources with daily values only (FRED, US Treasury) are drawn as a line. They publish after the close, often the
+next business day, so when the next source in the chain (Yahoo) already has a newer US trading day, its candles are
+shown instead (the same rule as the price, see feeds.py); on the same day the official source is shown.
 """
 from __future__ import annotations
 
 import asyncio
 import logging
 import time
+from collections.abc import Callable
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -96,83 +99,110 @@ class CandleService:
                 Candle.asset_id == asset_id, Candle.timeframe == tf, Candle.source == source, Candle.ts >= since,
             ).order_by(Candle.ts)))
 
+    # ------------------------------------------------------------------ choosing the source
+    async def _rows(self, asset: AssetRT, entry: ChainEntry, tf: str, since: Callable[[Provider], datetime],
+                    problems: list[str], empty_text: str) -> tuple[Provider, str, list[Candle]] | None:
+        """Fetch one source's candles if due and load them from `since(provider)`. None (problem noted) if unusable."""
+        p = self.providers.get(entry.provider)
+        if p is None:
+            return None
+        if not p.configured:
+            problems.append(f"{p.label}: no API key")
+            return None
+        h = self.health[p.name]
+        if not h.symbol_available(f"candles:{entry.symbol}"):
+            problems.append(f"{p.label}: cooling down after an error")
+            return None
+        tf_eff = "1d" if p.close_only else tf
+        try:
+            await self._ensure(asset, entry, p, tf_eff)
+        except ProviderRateLimited as e:
+            h.record_error(str(e), f"candles:{entry.symbol}", provider_wide=True)
+            problems.append(str(e))
+            return None
+        except (ProviderError, asyncio.TimeoutError) as e:
+            msg = str(e) or f"{p.label}: timed out"
+            h.record_error(msg, f"candles:{entry.symbol}")
+            problems.append(msg)
+            return None
+        except Exception as e:  # noqa: BLE001
+            log.exception("candles %s %s failed", p.name, entry.symbol)
+            h.record_error(f"{p.label}: {type(e).__name__}", f"candles:{entry.symbol}")
+            problems.append(f"{p.label}: {type(e).__name__}")
+            return None
+        rows = await asyncio.to_thread(self._load, asset.id, tf_eff, f"{p.name}:{entry.symbol}", since(p))
+        if not rows:
+            problems.append(f"{p.label}: {empty_text}")
+            return None
+        return p, tf_eff, rows
+
+    async def _pick(self, asset: AssetRT, tf: str, since: Callable[[Provider], datetime], problems: list[str],
+                    empty_text: str) -> tuple[ChainEntry, Provider, str, list[Candle], str | None] | None:
+        """First working source in the candle chain, except that a daily-only source (FRED, US Treasury) gives way
+        to the next intraday source when that one's newest candle is from a newer US trading day.
+        Returns (entry, provider, timeframe, rows, note saying why the newer source is shown)."""
+        chain = asset.candle_chain
+        for i, entry in enumerate(chain):
+            got = await self._rows(asset, entry, tf, since, problems, empty_text)
+            if got is None:
+                continue
+            p, tf_eff, rows = got
+            if p.close_only:
+                for later in chain[i + 1:]:
+                    lp = self.providers.get(later.provider)
+                    if lp is None or lp.close_only:
+                        continue
+                    # Problems of this optional comparison are not shown: the official chart is still fine.
+                    alt = await self._rows(asset, later, tf, since, [], empty_text)
+                    if alt is not None:
+                        d = rows[-1].ts.date()  # daily values are stamped 00:00 UTC of their date
+                        a = alt[2][-1].ts.astimezone(NEW_YORK).date()
+                        if a > d:
+                            note = (f"{p.label} has published values up to {d.day} {d:%b %Y} so far (it publishes after the "
+                                    f"close, often the next business day). {lp.label} already has {a.day} {a:%b %Y}, "
+                                    "so its newer chart is shown.")
+                            return later, lp, alt[1], alt[2], note
+                    break
+            return entry, p, tf_eff, rows, None
+        return None
+
     # ------------------------------------------------------------------ public
     async def chart(self, asset: AssetRT, rng: str) -> dict[str, Any]:
         if rng not in RANGES:
             rng = "1D"
         tf, lookback = RANGES[rng]
         problems: list[str] = []
-        for entry in asset.candle_chain:
-            p = self.providers.get(entry.provider)
-            if p is None:
-                continue
-            if not p.configured:
-                problems.append(f"{p.label}: no API key")
-                continue
-            h = self.health[p.name]
-            if not h.symbol_available(f"candles:{entry.symbol}"):
-                problems.append(f"{p.label}: cooling down after an error")
-                continue
-            tf_eff = "1d" if p.close_only else tf
-            try:
-                await self._ensure(asset, entry, p, tf_eff)
-            except ProviderRateLimited as e:
-                h.record_error(str(e), f"candles:{entry.symbol}", provider_wide=True)
-                problems.append(str(e))
-                continue
-            except (ProviderError, asyncio.TimeoutError) as e:
-                msg = str(e) or f"{p.label}: timed out"
-                h.record_error(msg, f"candles:{entry.symbol}")
-                problems.append(msg)
-                continue
-            except Exception as e:  # noqa: BLE001
-                log.exception("candles %s %s failed", p.name, entry.symbol)
-                problems.append(f"{p.label}: {type(e).__name__}")
-                continue
-            span = max(lookback, timedelta(days=31)) if p.close_only else lookback
-            rows = await asyncio.to_thread(self._load, asset.id, tf_eff, f"{p.name}:{entry.symbol}", utcnow() - span - timedelta(days=4))
-            rows = self._trim(rows, rng, tf_eff, asset.schedule, span)
-            if not rows:
-                problems.append(f"{p.label}: no candles in this range")
-                continue
-            return {
-                "range": rng, "timeframe": tf_eff, "provider": p.name, "source": p.label, "symbol": entry.symbol,
-                "note": entry.note, "is_proxy": entry.proxy, "is_unofficial": p.unofficial, "close_only": p.close_only,
-                "daily_only_note": p.close_only and tf != "1d",
-                "candles": [{"time": int(c.ts.timestamp()), "open": c.open, "high": c.high, "low": c.low, "close": c.close,
-                             "volume": c.volume} for c in rows],
-                "problems": problems,
-            }
-        return {"range": rng, "candles": [], "problems": problems or ["No chart source is available for this asset."]}
+
+        def span_of(p: Provider) -> timedelta:
+            return max(lookback, timedelta(days=31)) if p.close_only else lookback
+
+        picked = await self._pick(asset, tf, lambda p: utcnow() - span_of(p) - timedelta(days=4), problems,
+                                  "no candles in this range")
+        if picked is None:
+            return {"range": rng, "candles": [], "problems": problems or ["No chart source is available for this asset."]}
+        entry, p, tf_eff, rows, newer_note = picked
+        rows = self._trim(rows, rng, tf_eff, asset.schedule, span_of(p))
+        return {
+            "range": rng, "timeframe": tf_eff, "provider": p.name, "source": p.label, "symbol": entry.symbol,
+            "note": entry.note, "is_proxy": entry.proxy, "is_unofficial": p.unofficial, "close_only": p.close_only,
+            "daily_only_note": p.close_only and tf != "1d", "newer_note": newer_note,
+            "candles": [{"time": int(c.ts.timestamp()), "open": c.open, "high": c.high, "low": c.low, "close": c.close,
+                         "volume": c.volume} for c in rows],
+            "problems": problems,
+        }
 
     async def series(self, asset: AssetRT, tf: str, since: datetime) -> dict[str, Any]:
-        """Candles of one source from `since` until now (first working source in the candle chain).
-        Used for 'price since publish'. Daily-only sources return daily values."""
+        """Candles of one source from `since` until now (chosen like chart()). Used for 'price since publish'.
+        Daily-only sources return daily values."""
         problems: list[str] = []
-        for entry in asset.candle_chain:
-            p = self.providers.get(entry.provider)
-            if p is None or not p.configured:
-                continue
-            h = self.health[p.name]
-            if not h.symbol_available(f"candles:{entry.symbol}"):
-                problems.append(f"{p.label}: cooling down after an error")
-                continue
-            tf_eff = "1d" if p.close_only else tf
-            try:
-                await self._ensure(asset, entry, p, tf_eff)
-            except Exception as e:  # noqa: BLE001
-                msg = str(e) or type(e).__name__
-                h.record_error(msg, f"candles:{entry.symbol}")
-                problems.append(msg)
-                continue
-            rows = await asyncio.to_thread(self._load, asset.id, tf_eff, f"{p.name}:{entry.symbol}", since)
-            if not rows:
-                problems.append(f"{p.label}: no candles for that period")
-                continue
-            return {"provider": p.name, "symbol": entry.symbol, "source": p.label, "note": entry.note, "is_proxy": entry.proxy,
-                    "is_unofficial": p.unofficial, "close_only": p.close_only, "timeframe": tf_eff, "problems": problems,
-                    "candles": [{"ts": c.ts, "open": c.open, "high": c.high, "low": c.low, "close": c.close} for c in rows]}
-        return {"candles": [], "problems": problems or ["No chart source for this asset"]}
+        picked = await self._pick(asset, tf, lambda p: since, problems, "no candles for that period")
+        if picked is None:
+            return {"candles": [], "problems": problems or ["No chart source for this asset"]}
+        entry, p, tf_eff, rows, newer_note = picked
+        return {"provider": p.name, "symbol": entry.symbol, "source": p.label, "note": entry.note, "is_proxy": entry.proxy,
+                "is_unofficial": p.unofficial, "close_only": p.close_only, "timeframe": tf_eff, "problems": problems,
+                "newer_note": newer_note,
+                "candles": [{"ts": c.ts, "open": c.open, "high": c.high, "low": c.low, "close": c.close} for c in rows]}
 
     def _trim(self, rows: list[Candle], rng: str, tf: str, schedule: str, span: timedelta) -> list[Candle]:
         if not rows:

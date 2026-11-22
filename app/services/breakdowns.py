@@ -226,6 +226,7 @@ async def moves_since_publish(article: NewsArticle, symbols: list[str], feeds, c
             "change_abs": now_price - then["close"], "source": now_src, "note": series.get("note"),
             "is_proxy": series.get("is_proxy"), "is_unofficial": series.get("is_unofficial"),
             "daily": bool(series.get("close_only")), "timeframe": series.get("timeframe"),
+            "newer_note": series.get("newer_note"),
         })
     return out
 

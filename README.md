@@ -218,16 +218,17 @@ MEXC, Swissquote. The app does not get around the block; it uses sources that wo
 | US stocks, SPY, QQQ | Finnhub trade stream + quote → Twelve Data → Yahoo (unofficial) | **LIVE** in US hours (21:30–04:00 WIB in winter) | Twelve Data with key, else Yahoo |
 | Gold, silver | Finnhub OANDA stream → gold-api.com (every 15 s) | **LIVE** | PAX Gold token (**proxy**); silver: COMEX futures via Yahoo (**proxy**) |
 | WTI, Brent, natural gas | Finnhub OANDA stream → Yahoo futures (~10 min delayed) → EIA spot via FRED (daily) | **LIVE** when OANDA ticks | Yahoo futures, else EIA daily |
-| S&P 500, Nasdaq index | FRED daily (official) + Yahoo, **newer trading day wins** | Daily, or delayed intraday from Yahoo | FRED |
+| S&P 500, Nasdaq index | FRED daily (official) + Yahoo, **newer trading day wins** | Daily, or delayed intraday from Yahoo | FRED, or Yahoo when newer |
 | US Dollar Index (DXY) | Yahoo only — **no free official source** | ~10 min delayed | Yahoo |
-| US 10-year yield | US Treasury (official, end of day) + Yahoo `^TNX`, **newer trading day wins** | Daily, or delayed intraday from Yahoo | US Treasury |
+| US 10-year yield | US Treasury (official, end of day) + Yahoo `^TNX`, **newer trading day wins** | Daily, or delayed intraday from Yahoo | US Treasury, or Yahoo when newer |
 | Fed Broad Dollar Index | FRED (official) | Daily values, published weekly | FRED |
 
 **Newer trading day wins:** FRED posts the S&P 500 and Nasdaq closes the next business day (Friday's close
 appears on Monday), and the Treasury posts yields after the close. So for these three both sources are asked,
 and the one with the newer US trading day is shown, e.g. Yahoo's Friday close all weekend instead of FRED's
 Thursday value. On the same day the official source is shown. The price then carries a **newer data** chip whose
-tooltip names both dates; it is not a "fallback", because nothing failed.
+tooltip names both dates; it is not a "fallback", because nothing failed. Charts and "price since publication"
+follow the same rule, with a note under the chart naming both dates.
 
 **News:** 33 RSS feeds (Cointelegraph, The Block, Decrypt, CoinDesk, OilPrice, EIA, Bloomberg, WSJ,
 MarketWatch, CNBC, Investing.com, Seeking Alpha, Benzinga, Guardian, BBC, Federal Reserve, ECB, Yahoo Finance

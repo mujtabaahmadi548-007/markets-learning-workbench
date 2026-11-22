@@ -127,7 +127,7 @@
             <td class="r num">${fmt(m.then_price)}<br><span class="small muted" title="${M.esc(M.utcLabel(t0))}">${m.daily ? "close " + M.dateOnly(t0) : M.esc(M.shortJakarta(t0))}</span></td>
             <td class="r num">${fmt(m.now_price)}<br><span class="small muted" title="${M.esc(M.utcLabel(t1))}">${m.daily ? M.dateOnly(t1) : M.esc(M.shortJakarta(t1))}</span></td>
             <td class="r num ${up ? "up" : down ? "down" : ""}">${up ? "▲ +" : down ? "▼ −" : "■ "}${M.fmtNum(Math.abs(m.change_pct), 2)}%</td>
-            <td class="small">${M.esc(m.source)}${m.is_proxy ? ' <span class="chip">proxy</span>' : ""}${m.is_unofficial ? ' <span class="chip">unofficial</span>' : ""}<br><span class="muted">${M.esc(m.note || "")}</span></td></tr>`;
+            <td class="small">${M.esc(m.source)}${m.is_proxy ? ' <span class="chip">proxy</span>' : ""}${m.is_unofficial ? ' <span class="chip">unofficial</span>' : ""}${m.newer_note ? ` <span class="chip" title="${M.esc(m.newer_note)}">newer data</span>` : ""}<br><span class="muted">${M.esc(m.note || "")}</span></td></tr>`;
         }).join("") + "</tbody></table></div>";
     } catch (e) { box.innerHTML = `<p class="warn-text small">Could not load price moves: ${M.esc(e.message)}</p>`; }
   })();

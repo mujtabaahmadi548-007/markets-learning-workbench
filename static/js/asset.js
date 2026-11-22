@@ -87,6 +87,7 @@
     if (chartData.is_proxy) notes.push("PROXY: this chart shows a stand-in instrument, not the asset itself. It moves closely with it but can differ.");
     if (chartData.is_unofficial) notes.push("Unofficial source (Yahoo).");
     if (chartData.daily_only_note) notes.push("This source has daily values only, so a longer stretch of daily data is shown.");
+    if (chartData.newer_note) notes.push(chartData.newer_note);
     if (chartData.problems && chartData.problems.length) notes.push("Skipped sources: " + chartData.problems.join(" · "));
     warn.hidden = !notes.length;
     warn.textContent = notes.join(" ");

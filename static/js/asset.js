@@ -178,7 +178,9 @@
   function renderSummary(data) {
     const el = document.getElementById("chart-summary"), c = data.candles || [];
     if (c.length < 2) { el.textContent = ""; return; }
-    const first = c[0], last = c[c.length - 1], start = data.close_only ? first.close : (first.open ?? first.close);
+    // MAX starts from the first daily close, the same base as "All history" in the performance table
+    const first = c[0], last = c[c.length - 1];
+    const start = data.range === "MAX" && data.first_close ? data.first_close : data.close_only ? first.close : (first.open ?? first.close);
     const pct = (last.close / start - 1) * 100, d = quote ? quote.decimals : 2;
     const day = (t) => (isDailyUp() ? UTC_DMY.format(new Date(t * 1000)) : JKT_FULL.format(new Date(t * 1000)));
     // weekly/monthly bars are stamped with their first day; the real last trading day comes with the data
@@ -215,10 +217,10 @@
     drawChart(chartData);
     renderSummary(chartData);
     const tfName = TF_NAME[chartData.timeframe] || chartData.timeframe;
-    const since = chartData.history && chartData.range === "MAX" && chartData.first_date ? ` History starts ${M.esc(UTC_DMY.format(new Date(chartData.first_date + "T00:00:00Z")))} (${chartData.daily_points.toLocaleString("en-US")} trading days).` : "";
+    const since = chartData.history && chartData.range === "MAX" && chartData.first_date ? ` History starts ${M.esc(UTC_DMY.format(new Date(chartData.first_date + "T00:00:00Z")))} (${chartData.daily_points.toLocaleString("en-US")} ${quote && quote.asset_class === "crypto" ? "days" : "trading days"}).` : "";
     cap.innerHTML = `Chart: <strong>${M.esc(chartData.source)}</strong> — ${M.esc(chartData.note || chartData.symbol)}. ` +
       `${chartData.close_only ? "Daily closing values (line)" : tfName + " bars"}, ${chartData.candles.length.toLocaleString("en-US")} points.${since} ` +
-      (isDailyUp() ? "Bars are labelled by trading date." : "Times are Jakarta time (UTC+7).") + " Drag to scroll, wheel or pinch to zoom.";
+      (isDailyUp() ? (quote && quote.asset_class === "crypto" ? "Bars are labelled by UTC date." : "Bars are labelled by trading date.") : "Times are Jakarta time (UTC+7).") + " Drag to scroll, wheel or pinch to zoom.";
     const notes = [];
     if (chartData.is_proxy) notes.push("PROXY: this chart shows a stand-in instrument, not the asset itself. It moves closely with it but can differ.");
     if (chartData.is_unofficial) notes.push("Unofficial source (Yahoo).");
@@ -262,7 +264,7 @@
     box.innerHTML = `<div class="table-wrap"><table class="table perf-table"><thead><tr><th>Period</th><th>Start (close)</th><th class="r">Change</th><th class="r" title="Compound annual growth rate">Per year</th></tr></thead><tbody>${rows}</tbody></table></div>
       <p class="small">Highest close <strong>${fp(p.highest_close.close)}</strong> on ${M.esc(day(p.highest_close.date))} · now ${pc(p.from_high_pct)} from it.
         Lowest close ${fp(p.lowest_close.close)} on ${M.esc(day(p.lowest_close.date))}.</p>
-      <p class="small muted">${M.esc(p.basis)} From ${M.esc(day(p.first_date))} to ${M.esc(day(p.last_date))}: ${p.days.toLocaleString("en-US")} trading days (${p.years} years).
+      <p class="small muted">${M.esc(p.basis)} From ${M.esc(day(p.first_date))} to ${M.esc(day(p.last_date))}: ${p.days.toLocaleString("en-US")} ${quote && quote.asset_class === "crypto" ? "days" : "trading days"} (${p.years} years).
         Source: ${M.esc(p.source)} — ${M.esc(p.note || p.symbol)}${p.is_proxy ? " (PROXY: a stand-in instrument)" : ""}.${(p.problems || []).length ? " " + M.esc(p.problems.join(" · ")) : ""}</p>`;
   }
 

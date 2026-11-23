@@ -57,21 +57,33 @@ def sig(x: float | None) -> float | None:
     return None if x is None else float(f"{x:.6g}")
 
 
-def dedupe_days(rows: list[Candle]) -> list[Candle]:
-    """One daily candle per New York date (the newest stored one wins)."""
+def day_tz(asset: AssetRT):  # noqa: ANN201
+    """The calendar a market's daily bars belong to: UTC days for 24/7 crypto, New York trading days otherwise."""
+    return timezone.utc if asset.schedule == mh.CRYPTO else NEW_YORK
+
+
+def adjustment_text(asset: AssetRT) -> str:
+    if asset.schedule == mh.CRYPTO:
+        return ("Full history: daily US-dollar prices (days 00:00-24:00 UTC), a different market from the Binance USDT "
+                "price shown live, so the newest values can differ slightly.")
+    return "Prices are adjusted for stock splits but not for dividends (price return)."
+
+
+def dedupe_days(rows: list[Candle], tz=NEW_YORK) -> list[Candle]:  # noqa: ANN001
+    """One daily candle per market date (the newest stored one wins). tz: the market's own day, see day_tz()."""
     out: dict[Any, Candle] = {}
     for r in rows:
-        out[r.ts.astimezone(NEW_YORK).date()] = r
+        out[r.ts.astimezone(tz).date()] = r
     return list(out.values())
 
 
-def aggregate(bars: list[tuple], size: str) -> list[tuple]:
+def aggregate(bars: list[tuple], size: str, tz=NEW_YORK) -> list[tuple]:  # noqa: ANN001
     """Daily (ts, o, h, l, c, v) -> weekly ('1wk', weeks start Monday) or monthly ('1mo') bars:
     first open, highest high, lowest low, last close, summed volume; stamped with the first day's time."""
     out: list[list] = []
     key_prev = None
     for ts, o, h, lo, c, v in bars:
-        d = ts.astimezone(NEW_YORK).date()
+        d = ts.astimezone(tz).date()
         key = d.isocalendar()[:2] if size == "1wk" else (d.year, d.month)
         if key != key_prev:
             out.append([ts, o, h, lo, c, v])
@@ -89,12 +101,12 @@ PERIODS = [("1 month", timedelta(days=30)), ("3 months", timedelta(days=91)), ("
            ("20 years", timedelta(days=round(20 * 365.25)))]
 
 
-def performance_table(rows: list[Candle]) -> dict[str, Any]:
+def performance_table(rows: list[Candle], tz=NEW_YORK) -> dict[str, Any]:  # noqa: ANN001
     ts = [r.ts for r in rows]
     last = rows[-1]
 
     def nyd(t: datetime) -> str:
-        return t.astimezone(NEW_YORK).date().isoformat()
+        return t.astimezone(tz).date().isoformat()
 
     def at_or_before(t: datetime) -> Candle | None:
         i = bisect.bisect_right(ts, t) - 1
@@ -103,8 +115,9 @@ def performance_table(rows: list[Candle]) -> dict[str, Any]:
     out = []
     for label, delta in PERIODS:
         if delta is None:  # YTD: from the last close of the previous year
-            y = last.ts.astimezone(NEW_YORK).year
-            start = at_or_before(datetime(y, 1, 1, tzinfo=NEW_YORK).astimezone(timezone.utc))
+            y = last.ts.astimezone(tz).year
+            # the last bar before the year began (crypto bars are stamped 00:00 UTC, i.e. at 1 Jan itself)
+            start = at_or_before(datetime(y, 1, 1, tzinfo=tz).astimezone(timezone.utc) - timedelta(seconds=1))
             years = None
         else:
             if last.ts - delta < rows[0].ts:
@@ -367,34 +380,35 @@ class CandleService:
         with contextlib.suppress(Exception):  # today's bar (the history is downloaded once a day)
             await self._ensure(asset, entry, p, "1d")
         rows = await asyncio.to_thread(self._load, asset.id, "1d", f"{p.name}:{entry.symbol}", since)
-        return entry, p, dedupe_days(rows), problems
+        return entry, p, dedupe_days(rows, day_tz(asset)), problems
 
     async def history_chart(self, asset: AssetRT, rng: str) -> dict[str, Any]:
-        now = utcnow()
-        since = {"YTD": (datetime(now.astimezone(NEW_YORK).year, 1, 1, tzinfo=NEW_YORK) - timedelta(days=1)).astimezone(timezone.utc),
+        now, tz = utcnow(), day_tz(asset)
+        since = {"YTD": (datetime(now.astimezone(tz).year, 1, 1, tzinfo=tz) - timedelta(days=1)).astimezone(timezone.utc),
                  "5Y": now - timedelta(days=round(5 * 365.25) + 4)}.get(rng, HISTORY_FLOOR)
         got = await self._history_rows(asset, since)
         if got is None:
             return {"range": rng, "candles": [], "problems": ["No full-history source for this asset."]}
         entry, p, rows, problems = got
         if rng == "YTD":  # from the last close of the previous year, so the first bar shows the year's start
-            year = (rows[-1].ts.astimezone(NEW_YORK).year if rows else now.year)
-            rows = [r for r in rows if r.ts.astimezone(NEW_YORK).year == year]
+            year = (rows[-1].ts.astimezone(tz).year if rows else now.year)
+            rows = [r for r in rows if r.ts.astimezone(tz).year == year]
         if not rows:
             return {"range": rng, "candles": [], "problems": problems or [f"{p.label}: no history stored yet"]}
         bars = [(r.ts, r.open, r.high, r.low, r.close, r.volume) for r in rows]
         tf = "1d"
         if rng == "MAX" and len(bars) > MAX_BARS:
-            bars, tf = aggregate(bars, "1wk"), "1wk"
+            bars, tf = aggregate(bars, "1wk", tz), "1wk"
             if len(bars) > MAX_BARS:
-                bars, tf = aggregate([(r.ts, r.open, r.high, r.low, r.close, r.volume) for r in rows], "1mo"), "1mo"
+                bars, tf = aggregate([(r.ts, r.open, r.high, r.low, r.close, r.volume) for r in rows], "1mo", tz), "1mo"
         return {
             "range": rng, "timeframe": tf, "provider": p.name, "source": p.label, "symbol": entry.symbol,
             "note": entry.note, "is_proxy": entry.proxy, "is_unofficial": p.unofficial, "close_only": False,
             "daily_only_note": False, "newer_note": None, "history": True,
-            "first_date": rows[0].ts.astimezone(NEW_YORK).date().isoformat(), "daily_points": len(rows),
-            "last_date": rows[-1].ts.astimezone(NEW_YORK).date().isoformat(),  # weekly/monthly bars carry their first day
-            "adjustment": "Prices are adjusted for stock splits but not for dividends (price return).",
+            "first_date": rows[0].ts.astimezone(tz).date().isoformat(), "daily_points": len(rows),
+            "last_date": rows[-1].ts.astimezone(tz).date().isoformat(),
+            "first_close": sig(rows[0].close),  # MAX summary starts here, like the performance table's "All history"  # weekly/monthly bars carry their first day
+            "adjustment": adjustment_text(asset),
             "candles": [{"time": int(t.timestamp()), "open": sig(o), "high": sig(h), "low": sig(lo), "close": sig(c),
                          "volume": v or None} for t, o, h, lo, c, v in bars],
             "problems": problems,
@@ -411,8 +425,9 @@ class CandleService:
             return {"available": False, "problems": problems or ["Not enough history stored yet."]}
         return {"available": True, "source": p.label, "symbol": entry.symbol, "note": entry.note, "is_proxy": entry.proxy,
                 "is_unofficial": p.unofficial, "problems": problems,
-                "basis": "Price return from daily closes, adjusted for stock splits, dividends not included.",
-                **performance_table(rows)}
+                "basis": ("Change of the daily USD closing price (days run 00:00-24:00 UTC)." if asset.schedule == mh.CRYPTO
+                          else "Price return from daily closes, adjusted for stock splits, dividends not included."),
+                **performance_table(rows, day_tz(asset))}
 
     # ------------------------------------------------------------------ sparklines
     async def refresh_sparklines(self, assets: list[AssetRT]) -> None:

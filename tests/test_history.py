@@ -60,9 +60,28 @@ def test_history_ranges_in_api_and_page() -> None:
         nvda = next(a for a in st.feeds.assets.values() if a.symbol == "NVDA")
         btc = next(a for a in st.feeds.assets.values() if a.symbol == "BTC")
         assert st.candles.history_ranges(nvda) == ["YTD", "5Y", "MAX"]
-        assert st.candles.history_ranges(btc) == []  # no full-history source for crypto
+        assert st.candles.history_ranges(btc) == ["YTD", "5Y", "MAX"]
+        entry, p = st.candles.history_entry(btc)
+        assert (p.name, entry.symbol) == ("yahoo", "BTC-USD")
+        # short ranges still come from Binance (the live price's own market), not from the history source
+        assert btc.candle_chain[0].provider == "binance"
+        usdbroad = next(a for a in st.feeds.assets.values() if a.symbol == "USDBROAD")
+        assert st.candles.history_ranges(usdbroad) == []  # FRED only: no full-history source
         assert c.get("/api/candles/NVDA?range=10Y").status_code == 400
         page = c.get("/asset/NVDA").text
         assert 'data-range="MAX"' in page and 'data-range="YTD"' in page and 'id="perf-card"' in page
         btc_page = c.get("/asset/BTC").text
-        assert 'data-range="MAX"' not in btc_page and 'id="perf-card"' not in btc_page
+        assert 'data-range="MAX"' in btc_page and 'id="perf-card"' in btc_page
+        assert 'data-range="MAX"' not in c.get("/asset/USDBROAD").text
+
+
+def test_crypto_days_are_utc_days() -> None:
+    """Crypto daily bars start at 00:00 UTC; in New York time they would all read one day early."""
+    rows = [SimpleNamespace(ts=datetime(2025, 12, 30, tzinfo=timezone.utc) + timedelta(days=i), close=100.0 + i, high=0, low=0)
+            for i in range(5)]  # 30 Dec 2025 ... 3 Jan 2026
+    p = cs.performance_table(rows, timezone.utc)
+    assert p["first_date"] == "2025-12-30" and p["last_date"] == "2026-01-03"
+    ytd = next(r for r in p["periods"] if r["label"] == "YTD")
+    assert ytd["start_date"] == "2025-12-31" and ytd["start_close"] == 101.0  # the last close before 1 Jan
+    ny = cs.performance_table(rows)  # New York calendar: shifted, which is why crypto uses UTC
+    assert ny["first_date"] == "2025-12-29"

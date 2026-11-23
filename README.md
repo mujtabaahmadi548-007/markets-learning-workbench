@@ -28,7 +28,7 @@ Version 1.1 — all stages (0–7) built, plus the new design and article images
 | Page | What it does |
 |---|---|
 | **Dashboard** `/` | Live price board for 24 assets (price, change with ▲▼ arrows, day range, 1-day sparkline, status badge, source, update time), market open/closed chips, biggest movers with a "Why?" button, top news, upcoming economic events. |
-| **Asset page** `/asset/BTC` | Big live price, real-candle chart (1D / 1W / 1M / 6M / 1Y, plus YTD / 5Y / MAX = the full history since the first trade for stocks, ETFs, indices, commodities, DXY and US10Y; styles Candles / Line / Area, Price / Log / % scale, MA 50/200, volume, hover legend), a "Performance over its full history" table (returns 1 month to 20 years, per-year averages, highest close, drop from the high), key numbers, the source chain, **"Why did it move today?"**, news about the asset, concepts to know, quick price alert. |
+| **Asset page** `/asset/BTC` | Big live price, real-candle chart (1D / 1W / 1M / 6M / 1Y, plus YTD / 5Y / MAX = the full history since the first trade for stocks, ETFs, indices, crypto, commodities, DXY and US10Y; styles Candles / Line / Area, Price / Log / % scale, MA 50/200, volume, hover legend), a "Performance over its full history" table (returns 1 month to 20 years, per-year averages, highest close, drop from the high), key numbers, the source chain, **"Why did it move today?"**, news about the asset, concepts to know, quick price alert. |
 | **News** `/news` | Live news feed with filters (asset, class, source, time, has-breakdown) and search. New articles are announced while you read. |
 | **Article** `/news/123` | Original link, metadata, **AI breakdown** (what happened, why it matters, affected assets with cause→effect chains, facts vs opinions, beginner explanation, concepts), **real price moves since publication**, "Quiz me on this". |
 | **Learn** `/learn` | 5 learning paths (Gold, Oil, Crypto, Stocks, Macro) × 4 lessons. Each lesson shows today's real news and live prices as examples. |
@@ -257,7 +257,8 @@ ForexFactory (unofficial) as an extra. **No free source for OPEC meeting dates w
 - **Full history (YTD / 5Y / MAX)** is Yahoo's daily history since the first trade (AAPL from 1980, NVDA from 1999,
   the S&P 500 from 1927), downloaded about once a day and stored. Prices are split-adjusted, not dividend-adjusted
   (price return). MAX shows weekly bars, or monthly bars for very long histories, so it loads fast on phones.
-  Crypto has no full-history source yet (its charts go back about a year).
+  Crypto uses Yahoo's daily US-dollar history (BTC from 17 Sep 2014, ETH/BNB/XRP from 9 Nov 2017, SOL from
+  10 Apr 2020; UTC days) for YTD / 5Y / MAX, while its shorter charts stay on Binance, the live price's market.
 - **After-hours trades are ignored**; a closed stock shows the official 16:00 New York close.
 - **Article text:** fetched only where `robots.txt` allows; Bloomberg, WSJ and MarketWatch block it, so their
   breakdowns are "headline and description only". Some sites return only part of the text (shown in characters).

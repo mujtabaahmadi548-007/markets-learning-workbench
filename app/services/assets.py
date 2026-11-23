@@ -23,7 +23,8 @@ from app.timeutil import utcnow
 
 log = logging.getLogger(__name__)
 
-SEED_VERSION = 2  # v2: Finnhub OANDA streams first for gold/silver; weekly limit for the Fed dollar index
+SEED_VERSION = 3  # v2: Finnhub OANDA streams first for gold/silver; weekly limit for the Fed dollar index
+#                  v3: Yahoo USD history for crypto (full history since 2014 for BTC; Binance starts Aug 2017)
 
 
 def E(provider: str, symbol: str, note: str, proxy: bool = False, max_age_days: int | None = None) -> dict[str, Any]:  # noqa: N802
@@ -34,12 +35,16 @@ def E(provider: str, symbol: str, note: str, proxy: bool = False, max_age_days: 
 
 
 def _crypto(sym: str, name: str, binance: str, gate: str, gecko: str, decimals: int = 2) -> dict[str, Any]:
+    # Charts up to 1Y come from Binance (the live price's own market). YTD / 5Y / MAX use Yahoo's daily USD history,
+    # the longest free one (measured 24 Nov 2026: BTC-USD from 17 Sep 2014, ETH/BNB/XRP from 9 Nov 2017,
+    # SOL from 10 Apr 2020; Binance starts 17 Aug 2017 for BTC). Yahoo is also the last chart fallback.
     return dict(symbol=sym, name=name, asset_class="crypto", schedule=mh.CRYPTO, currency="USD", decimals=decimals,
                 quote=[E("binance", binance, f"{binance[:-4]}/USDT on Binance"),
                        E("gateio", gate, f"{gate.replace('_', '/')} on Gate.io"),
                        E("coingecko", gecko, "CoinGecko average price in USD")],
                 candles=[E("binance", binance, f"{binance[:-4]}/USDT on Binance"),
-                         E("gateio", gate, f"{gate.replace('_', '/')} on Gate.io")])
+                         E("gateio", gate, f"{gate.replace('_', '/')} on Gate.io"),
+                         E("yahoo", f"{sym}-USD", f"{sym} in US dollars, daily (Yahoo, unofficial)")])
 
 
 def _stock(sym: str, name: str, asset_class: str = "stock") -> dict[str, Any]:

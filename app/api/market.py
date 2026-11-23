@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisco
 
 from app.api.deps import state
 from app.services.assets import CLASS_LABELS
-from app.services.candles import RANGES
+from app.services.candles import ALL_RANGES, HISTORY_RANGES
 from app.timeutil import utcnow
 
 router = APIRouter()
@@ -53,9 +53,18 @@ def asset_detail(request: Request, symbol: str) -> dict:
 async def candles(request: Request, symbol: str, range: str = "1D") -> dict:  # noqa: A002
     st = state(request)
     a = _asset_or_404(request, symbol)
-    if range not in RANGES:
-        raise HTTPException(400, f"range must be one of {', '.join(RANGES)}")
+    if range not in ALL_RANGES:
+        raise HTTPException(400, f"range must be one of {', '.join(ALL_RANGES)}")
+    if range in HISTORY_RANGES:
+        return await st.candles.history_chart(a, range)
     return await st.candles.chart(a, range)
+
+
+@router.get("/api/assets/{symbol}/performance")
+async def performance(request: Request, symbol: str) -> dict:
+    """Returns over 1 month ... 20 years and all history, highest/lowest close, drop from the high."""
+    st = state(request)
+    return await st.candles.performance(_asset_or_404(request, symbol))
 
 
 @router.get("/api/sparklines")

@@ -22,14 +22,35 @@
 <section class="card">
   <div class="chart-head">
     <h2>Chart</h2>
+    {% set ranges = ["1D", "1W", "1M", "6M"] + (["YTD"] if "YTD" in history_ranges else []) + ["1Y"] + (["5Y", "MAX"] if "MAX" in history_ranges else []) %}
     <div class="range-buttons" role="group" aria-label="Chart range">
-      {% for r in ["1D", "1W", "1M", "6M", "1Y"] %}<button type="button" data-range="{{ r }}" {% if r == "1D" %}class="active" aria-pressed="true"{% else %}aria-pressed="false"{% endif %}>{{ r }}</button>{% endfor %}
+      {% for r in ranges %}<button type="button" data-range="{{ r }}" title="{{ {'1D': 'Latest trading day, 5-minute candles', '1W': 'One week, hourly candles', '1M': 'One month, hourly candles', '6M': 'Six months, daily candles', 'YTD': 'Since the start of this year, daily candles', '1Y': 'One year, daily candles', '5Y': 'Five years, daily candles', 'MAX': 'Full history since the first trade (weekly or monthly bars for long histories)'}[r] }}" {% if r == "1D" %}class="active" aria-pressed="true"{% else %}aria-pressed="false"{% endif %}>{{ r }}</button>{% endfor %}
     </div>
   </div>
-  <div id="chart" class="chart" aria-label="Price chart"></div>
+  <div class="chart-tools" id="chart-tools">
+    <span><span class="tool-name">Style</span><span class="seg" role="group" aria-label="Chart style" id="ct-type">
+      <button type="button" data-v="auto" title="Candles for short ranges, area for 5Y and MAX">Auto</button><button type="button" data-v="candles">Candles</button><button type="button" data-v="line">Line</button><button type="button" data-v="area">Area</button></span></span>
+    <span><span class="tool-name">Scale</span><span class="seg" role="group" aria-label="Price scale" id="ct-scale">
+      <button type="button" data-v="auto" title="Logarithmic for MAX, normal otherwise">Auto</button><button type="button" data-v="normal" title="Normal price scale">Price</button><button type="button" data-v="log" title="Logarithmic: equal distances are equal % moves; best for long histories">Log</button><button type="button" data-v="pct" title="% change from the first bar shown">%</button></span></span>
+    <label title="Simple moving averages of the closes of the bars shown"><input type="checkbox" id="ct-ma"> MA 50 / 200</label>
+    <label><input type="checkbox" id="ct-vol"> Volume</label>
+    <button type="button" class="btn-link" id="ct-fit" title="Show the whole range again after zooming or scrolling">Reset zoom</button>
+  </div>
+  <div class="chart-wrap">
+    <div class="chart-legend" id="chart-legend" aria-live="off"></div>
+    <div id="chart" class="chart" aria-label="Price chart. Drag to scroll, wheel or pinch to zoom."></div>
+  </div>
+  <p class="chart-summary" id="chart-summary"></p>
   <p class="small muted" id="chart-caption">Loading chart…</p>
   <p class="small warn-text" id="chart-warning" hidden></p>
 </section>
+
+{% if history_ranges %}
+<section class="card" id="perf-card">
+  <h2>Performance over its full history</h2>
+  <div id="perf-box"><p class="muted small">Loading…</p></div>
+</section>
+{% endif %}
 
 <div class="grid-2">
   <section class="card">

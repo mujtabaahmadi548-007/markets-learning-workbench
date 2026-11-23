@@ -212,6 +212,10 @@
       q.set("symbol", decodeURIComponent(m[1])); q.set("sort", "important");
       return news(q);
     }
+    if ((m = p.match(/^\/api\/assets\/([^/]+)\/performance$/))) {
+      try { return await getJSON(`performance/${decodeURIComponent(m[1])}.json`); }
+      catch (e) { return { available: false, problems: ["The full-history table is not on the website yet."] }; }
+    }
     if ((m = p.match(/^\/api\/assets\/([^/]+)\/why$/))) {
       if (method !== "GET") throw new Error(NOT_HERE);
       try { return await getJSON(`why/${decodeURIComponent(m[1])}.json`); } catch (e) { return { explanation: null }; }

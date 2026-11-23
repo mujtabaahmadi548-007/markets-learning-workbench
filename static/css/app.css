@@ -254,6 +254,24 @@ blockquote { margin: 10px 0; padding: 10px 14px; border-left: 4px solid var(--bl
 .range-buttons button { background: transparent; color: var(--text-2); border: none; border-radius: 999px; padding: 4px 13px; cursor: pointer; font: inherit; font-size: 0.82rem; font-weight: 600; }
 .range-buttons button.active { background: var(--navy-800); color: #fff; }
 .chart { width: 100%; height: 400px; margin: 10px 0; }
+.range-buttons { flex-wrap: wrap; }
+.range-buttons button { padding: 4px 11px; }
+.chart-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin: 8px 0 2px; font-size: 0.82rem; }
+.chart-tools .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.chart-tools .seg button { background: var(--surface); color: var(--text-2); border: none; border-right: 1px solid var(--border); padding: 4px 10px; cursor: pointer; font: inherit; font-weight: 600; }
+.chart-tools .seg button:last-child { border-right: none; }
+.chart-tools .seg button.active { background: var(--navy-800); color: #fff; }
+.chart-tools label { display: inline-flex; align-items: center; gap: 5px; color: var(--text-2); cursor: pointer; }
+.chart-tools .tool-name { color: var(--muted, #6B7A90); font-weight: 600; margin-right: 2px; }
+.chart-tools .btn-link { background: none; border: none; color: var(--navy-700, #1D4ED8); cursor: pointer; font: inherit; font-weight: 600; padding: 2px 4px; }
+.chart-wrap { position: relative; }
+.chart-legend { position: absolute; top: 6px; left: 8px; z-index: 3; pointer-events: none; font-size: 0.8rem; line-height: 1.45;
+  background: rgba(255, 255, 255, 0.86); border-radius: 6px; padding: 3px 7px; max-width: calc(100% - 80px); }
+.chart-legend .lg-date { font-weight: 700; color: var(--text-1, #0F1D33); }
+.chart-legend .lg-k { color: var(--muted, #6B7A90); margin-left: 6px; }
+.chart-legend .ma50 { color: #D97706; font-weight: 700; } .chart-legend .ma200 { color: #7C3AED; font-weight: 700; }
+.chart-summary { font-size: 0.9rem; margin: 2px 0 6px; }
+.perf-table td.num, .perf-table th.r { text-align: right; }
 
 /* ---------------------------------------------------------------- learn */
 .paths { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 18px; margin-bottom: 18px; }
@@ -445,6 +463,8 @@ blockquote { margin: 10px 0; padding: 10px 14px; border-left: 4px solid var(--bl
   .thumb { flex-basis: 96px; height: 64px; }
   .news-item.compact .thumb { flex-basis: 80px; height: 54px; }
   .chart { height: 300px; }
+  .range-buttons button { padding: 4px 7px; font-size: 0.78rem; }
+  .chart-tools .seg button { padding: 4px 8px; }
   .hero-price .big { font-size: 2rem; }
   .article-title { font-size: 1.25rem; }
   .filters { gap: 6px; }

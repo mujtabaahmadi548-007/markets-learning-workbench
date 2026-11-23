@@ -298,8 +298,10 @@ def export(client, st, portal, out: Path) -> None:  # noqa: ANN001
         d.pop("server_time", None)
         dump(out, f"assets/{a.symbol}.json", d)
         dump(out, f"why/{a.symbol}.json", client.get(f"/api/assets/{a.symbol}/why").json())
-        for rng in RANGES:
+        for rng in [*RANGES, *st.candles.history_ranges(a)]:
             dump(out, f"candles/{a.symbol}/{rng}.json", client.get(f"/api/candles/{a.symbol}?range={rng}").json())
+        if st.candles.history_ranges(a):
+            dump(out, f"performance/{a.symbol}.json", client.get(f"/api/assets/{a.symbol}/performance").json())
     say(f"data: {len(articles)} articles, {len(assets)} assets")
 
     paths = st.learning.paths()

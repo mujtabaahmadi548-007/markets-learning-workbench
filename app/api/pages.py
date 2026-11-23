@@ -83,7 +83,8 @@ def asset_page(request: Request, symbol: str) -> HTMLResponse:
             concepts.append(c)
     return templates.TemplateResponse(request, "asset.html", _ctx(request, "/asset", asset=asset,
                                                                    class_label=CLASS_LABELS.get(asset.asset_class, ""),
-                                                                   concepts=concepts[:8], ai_ready=st.gemini.configured))
+                                                                   concepts=concepts[:8], ai_ready=st.gemini.configured,
+                                                                   history_ranges=st.candles.history_ranges(asset)))
 
 
 @router.get("/health", response_class=HTMLResponse)

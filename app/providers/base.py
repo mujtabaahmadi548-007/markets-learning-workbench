@@ -140,6 +140,7 @@ class Provider:
     # How long fetched candles stay fresh before being fetched again (seconds), per timeframe.
     candle_ttl: dict[str, float] = {"5m": 120, "1h": 600, "1d": 7200}
     close_only: bool = False  # candles carry only a close value (daily official series)
+    has_history: bool = False  # get_history() returns every daily candle since the first trade
 
     def __init__(self, http: httpx.AsyncClient, api_key: str = "") -> None:
         self.http = http
@@ -154,6 +155,9 @@ class Provider:
 
     async def get_candles(self, symbol: str, timeframe: str, limit: int) -> list[CandleData]:
         raise UnsupportedError(f"{self.label} has no candles")
+
+    async def get_history(self, symbol: str) -> list[CandleData]:
+        raise UnsupportedError(f"{self.label} has no full history")
 
     @property
     def can_stream(self) -> bool:

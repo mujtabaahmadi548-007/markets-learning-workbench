@@ -35,8 +35,9 @@
   <footer class="footer">
     <strong>Educational tool — not financial advice.</strong>
     <span>Times are Jakarta time (UTC+7), 12-hour clock. Hover a time to see UTC.</span>
-    <span class="muted">v{{ version }}{% if site.static %} · website version, rebuilt about every 10 minutes{% endif %}</span>
+    <span class="muted">v{{ version }}{% if site.static %} · website version: prices refreshed about every 5 minutes, crypto and gold live in your browser{% endif %}</span>
   </footer>
+  <script src="{{ static_url('js/market-status.js') }}"></script>
   {% if site.static %}
   <script>window.MLW_STATIC = true; window.MLW_BASE = {{ site.base | tojson }};</script>
   <script src="{{ static_url('js/static-site.js') }}"></script>

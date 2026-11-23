@@ -7,11 +7,16 @@ Measured on 20 Nov 2026: futures (CL=F, BZ=F, GC=F, DX-Y.NYB) about 10 minutes b
 """
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 
-from app.providers.base import CandleData, Provider, ProviderError, QuoteData, RateLimiter, fnum
+from app.providers.base import CandleData, Provider, ProviderError, ProviderRateLimited, QuoteData, RateLimiter, fnum
 
 URL = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
+BROWSER_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36",
+    "Accept": "application/json,text/plain,*/*",
+}
 # timeframe -> (interval, range)
 CANDLE_PARAMS = {"5m": ("5m", "5d"), "1h": ("60m", "3mo"), "1d": ("1d", "2y")}
 
@@ -76,12 +81,24 @@ class YahooProvider(Provider):
         super().__init__(http, api_key)
         self._limiter = RateLimiter(30)
 
+    async def _chart(self, symbol: str, params: dict) -> dict:
+        """Yahoo answers non-browser clients (and busy shared IPs such as GitHub's runners) with HTTP 429 more
+        often, so ask like a browser and retry a rate limit twice after a short wait."""
+        for attempt, wait in enumerate((0.0, 2.0, 6.0)):
+            if wait:
+                await asyncio.sleep(wait)
+            await self._limiter.acquire()
+            try:
+                return await self._get_json(URL.format(symbol=symbol), params=params, headers=BROWSER_HEADERS)
+            except ProviderRateLimited:
+                if attempt == 2:
+                    raise
+        raise AssertionError("unreachable")
+
     async def get_quote(self, symbol: str) -> QuoteData:
-        await self._limiter.acquire()
-        return parse_quote(await self._get_json(URL.format(symbol=symbol), params={"interval": "5m", "range": "1d"}))
+        return parse_quote(await self._chart(symbol, {"interval": "1m", "range": "1d"}))
 
     async def get_candles(self, symbol: str, timeframe: str, limit: int) -> list[CandleData]:
         interval, rng = CANDLE_PARAMS[timeframe]
-        await self._limiter.acquire()
-        candles = parse_candles(await self._get_json(URL.format(symbol=symbol), params={"interval": interval, "range": rng}))
+        candles = parse_candles(await self._chart(symbol, {"interval": interval, "range": rng}))
         return candles[-limit:]

@@ -9,6 +9,9 @@ Rules (spec section 5):
 - ERROR         fetching failed and the data we have is too old (or there is none).
 - CONNECTING    no data yet since the app started (not an error, not a price).
 - UNAVAILABLE   no free source exists for this asset ("Not available on free sources").
+- PRE_MARKET / AFTER_HOURS  US stocks outside the regular session but inside extended hours.
+- DAILY_EOD / WEEKLY        official slow series (US Treasury, FRED), labelled by how often they publish.
+A market that is open never shows MARKET_CLOSED: an old price there is STALE.
 Delayed data is never labelled LIVE, and stale data is never shown as current.
 """
 from __future__ import annotations
@@ -23,9 +26,15 @@ STALE = "STALE"
 ERROR = "ERROR"
 CONNECTING = "CONNECTING"
 UNAVAILABLE = "UNAVAILABLE"
+PRE_MARKET = "PRE_MARKET"  # US stocks 04:00-09:30 New York time (the price shown is the last regular close)
+AFTER_HOURS = "AFTER_HOURS"  # US stocks after the close until 20:00 New York time
+DAILY_EOD = "DAILY_EOD"  # official end-of-day series (US Treasury, FRED daily)
+WEEKLY = "WEEKLY"  # official series published once a week (FRED broad dollar index)
 
 LIVE_MAX_AGE = 5.0  # seconds
 DAILY_STALE_DAYS = 5  # a daily series older than this (calendar days) is stale
+WEEKLY_MIN_DAYS = 7  # a series allowed to be this many days old is published weekly
+SESSION_GRACE = 15 * 60.0  # after a session opens, quotes from before it are STALE once this much time has passed
 
 
 @dataclass(frozen=True)
@@ -42,6 +51,8 @@ class StatusInput:
     expected_delay: float = 0.0  # provider's documented/typical delay in seconds
     unavailable_reason: str | None = None
     daily_max_age_days: int = DAILY_STALE_DAYS  # weekly-published daily series need a longer limit
+    phase: str = "regular"  # market_hours.SessionInfo.phase: regular | pre | post | closed
+    session_opened_at: datetime | None = None  # start of the session that is open now
 
 
 @dataclass(frozen=True)
@@ -86,13 +97,23 @@ def compute_status(i: StatusInput) -> StatusResult:
         days = (i.now.date() - i.source_timestamp.date()).days
         if days > i.daily_max_age_days:
             return StatusResult(STALE, "Stale", f"Daily data; the newest value is {days} days old")
-        detail = "Official daily data (one value per business day)"
+        weekly = i.daily_max_age_days >= WEEKLY_MIN_DAYS
+        detail = ("Official series published once a week (daily values)" if weekly
+                  else "Official end-of-day data (one value per business day)")
         if recent_error:
             detail += f". Last refresh failed: {i.error_message}"
-        return StatusResult(DELAYED, "Daily", detail)
+        return StatusResult(WEEKLY, "Weekly", detail) if weekly else StatusResult(DAILY_EOD, "Daily EOD", detail)
 
     if not i.market_open:
+        if i.phase == "pre":
+            return StatusResult(PRE_MARKET, "Pre-market", "Pre-market trading; the price shown is the last regular-session price")
+        if i.phase == "post":
+            return StatusResult(AFTER_HOURS, "After-hours", "After-hours trading; the price shown is the regular-session close")
         return StatusResult(MARKET_CLOSED, "Market closed", "Showing the last price before the close")
+
+    if (i.session_opened_at is not None and i.source_timestamp < i.session_opened_at
+            and (i.now - i.session_opened_at).total_seconds() > SESSION_GRACE):
+        return StatusResult(STALE, "Stale", "Market is open but the price is from before this session opened")
 
     limit = stale_after(i.kind, i.poll_interval, i.expected_delay)
     if recent_error and age > limit:

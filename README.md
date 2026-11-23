@@ -49,8 +49,8 @@ Version 1.1 — all stages (0–7) built, plus the new design and article images
   (article text, prices, % moves), allowing for rounding. If not, the AI is asked once more with a stricter
   prompt; if it still fails, the sentences with invented numbers are removed and the result is flagged.
   Each breakdown shows "Number check: ✔" or "⚠".
-- **Status badges:** LIVE (streamed, ≤ 5 s old) · DELAYED · DAILY · MARKET CLOSED · STALE · ERROR · N/A
-  (no free source). Delayed data is never called live.
+- **Status badges:** LIVE · DELAYED · PRE-MARKET · AFTER-HOURS · MARKET CLOSED · STALE · DAILY EOD ·
+  WEEKLY (FRED) · ERROR · N/A (no free source). An open market never shows MARKET CLOSED: an old price there is STALE.
 - **Every news item links to the original article.** Breakdowns say whether they used the fetched article
   text (and how many characters) or only the headline and description.
 - **"Why did it move?"** must cite stored articles for every driver; otherwise it says
@@ -64,13 +64,18 @@ Version 1.1 — all stages (0–7) built, plus the new design and article images
 
 | Badge | Meaning |
 |---|---|
-| **LIVE** | Streamed, last update at most 5 seconds old. |
-| **DELAYED · 15 s** | Checked on a timer, or a stream that had no new trade for a few seconds. The age keeps counting. |
-| **DAILY · 18 Nov 2026** | Official data, one value per business day (FRED, US Treasury). |
-| **MARKET CLOSED** | Weekend, holiday or outside hours. Hover to see when it closed and when it opens. |
-| **STALE · 12 min** | The market should be open but the data is older than expected. |
+| **LIVE** | App on your PC: streamed, at most 5 s old. Website: crypto ≤ 2 min old; stocks, indices, commodities ≤ 5 min old while their market is open. |
+| **DELAYED · 15 s** | Older than LIVE but still recent (website: crypto 2-15 min, others 5-20 min). The age keeps counting. |
+| **PRE-MARKET / AFTER-HOURS** | US stocks 4:00-9:30 AM / after the close until 8:00 PM New York time. The price is the last regular-session price. |
+| **MARKET CLOSED** | Weekend, holiday, night, or the 5-6 PM New York break for commodities. Hover to see the last price's time. |
+| **STALE · 12 min** | The market is open but the newest quote is too old (website: crypto > 15 min, others > 20 min or from before today's session). |
+| **DAILY EOD · 18 Nov 2026** | Official end-of-day value (US Treasury, FRED daily). |
+| **WEEKLY (FRED) · 13 Nov 2026** | Official series published once a week (Fed broad dollar index). |
 | **ERROR** | The source is failing and the data is too old (hover for the error). |
 | **N/A** | No free source exists ("Not available on free sources"). |
+
+On the website every badge is worked out in your browser from the current time, the quote's own time and the
+market's hours (`static/js/market-status.js`, tests in `tests/js/`), so a page left open never keeps an old status.
 
 Chips: **fallback** (a backup source is in use), **unofficial** (Yahoo), **proxy** (a stand-in instrument,
 e.g. the PAX Gold token for gold's chart).
@@ -132,13 +137,16 @@ GitHub builds the website from this repository with the same code and the same h
 (`build_site.py` run by `.github/workflows/site.yml`):
 
 - A build collects real prices, news, images and (with a Gemini key) AI breakdowns, then publishes the
-  pages. Each build starts the next one about 5 minutes after it ends, so the site is **rebuilt about every
-  10 minutes**; an hourly schedule restarts the chain if it ever stops. The database is carried from build to
-  build in the GitHub Actions cache (not in git). Publishing is a separate `deploy` job that waits until
-  GitHub lists the uploaded pages and retries up to 3 times (GitHub's artifact list can lag a few seconds
-  behind an upload).
-- **Crypto prices are live in your browser** (Binance stream). Stocks, metals, energy and macro show the
-  build's real quote with its real age and a DELAYED/STALE/MARKET CLOSED badge.
+  pages. Each build starts the next one as soon as its build job ends (publishing runs alongside), so prices
+  are **refreshed about every 5 minutes**; an hourly schedule restarts the chain if it ever stops. The database
+  is carried from build to build in the GitHub Actions cache (not in git). Publishing is a separate `deploy`
+  job that waits until GitHub lists the uploaded pages and retries up to 3 times.
+- **Prices never wait for the AI.** Quotes are collected first, keep updating while the pages are written, and
+  `data/quotes.json` is written again as the build's last step. It carries per-source diagnostics
+  (`last_attempted_at`, `last_succeeded_at`, `error`) and the build log names any failing source (Health page).
+- **Crypto (Binance stream) and gold/silver (gold-api.com, every 75 s) are live in your browser.** Stocks,
+  indices, energy and macro show the newest build's real quote with its real age. The Briefing page shows
+  current prices with the price at briefing time under each one.
 - Your **learning progress and alerts are kept in your browser** (each device separately). Settings →
   "Export progress" / "Import progress" copies them between devices.
 - Buttons that need the server (Fetch news now, make a breakdown, Why did it move?, Explain this term, make

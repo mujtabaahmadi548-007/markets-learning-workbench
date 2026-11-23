@@ -1,6 +1,9 @@
 // Website mode (GitHub Pages). Loaded before common.js only on the published site.
-// - Prices, news, charts, breakdowns: JSON files rebuilt by GitHub every ~10 minutes (real data, with timestamps).
+// - Prices: quotes.json, refreshed by every GitHub build (about every 5 minutes), re-read here every minute.
+// - News, charts, breakdowns: JSON files from the same builds (real data, with timestamps).
 // - Crypto prices: streamed live from Binance's public market-data feed straight into this browser.
+// - Gold and silver: fetched from gold-api.com by this browser every 75 seconds.
+// - Status badges: worked out in this browser from the current time (market-status.js).
 // - Your progress (quiz answers, spaced repetition, lessons, concepts seen, price alerts) is saved in THIS browser
 //   (localStorage). Use Settings → "Export my progress" to move it to another device.
 (function () {
@@ -29,7 +32,7 @@
     }
     return cache[path];
   }
-  const NOT_HERE = "This action needs the app running on your PC. On the website it happens automatically every ~10 minutes.";
+  const NOT_HERE = "This action needs the app running on your PC. On the website it happens automatically about every 5 minutes.";
 
   // ---------------------------------------------------------------- news filtering (same rules as the server)
   function rankNow(a) {
@@ -246,18 +249,20 @@
     throw new Error(NOT_HERE);
   };
 
-  // ---------------------------------------------------------------- live layer: snapshot + Binance stream
+  // ---------------------------------------------------------------- live layer: snapshot + Binance stream + gold-api
   const LIVE = { quotes: new Map(), liveAt: new Map(), lastMsg: new Map() };
+  // Status is worked out here, in the browser, from the current time + the quote's timestamp + the market's schedule
+  // (market-status.js), never copied from the moment the snapshot was built: a page left open across the US open
+  // must not keep saying "MARKET CLOSED".
+  function restatus(q, now) {
+    const r = window.MLWStatus && window.MLWStatus.compute(q, now === undefined ? Date.now() : now);
+    if (!r) return false;
+    const changed = q.status !== r.status;
+    q.status = r.status; q.status_label = r.label; q.status_detail = r.detail; q.status_by_browser = true;
+    return changed;
+  }
   function adapt(q) {
-    // The snapshot was made on GitHub's servers; nothing in it is streaming into this page, so it is never "LIVE" here.
-    const now = Date.now();
-    const age = q.source_timestamp ? (now - Date.parse(q.source_timestamp)) / 1000 : null;
-    if (q.status === "LIVE" || (q.status === "MARKET_CLOSED" && q.market && q.market.next_open && Date.parse(q.market.next_open) < now)) {
-      q.status = "DELAYED"; q.status_label = "Delayed"; q.status_detail = "Website snapshot (rebuilt about every 10 minutes)";
-    }
-    if (q.status === "DELAYED" && q.kind !== "daily" && age !== null && age > 3600) {
-      q.status = "STALE"; q.status_label = "Stale"; q.status_detail = "The website snapshot is more than an hour old";
-    }
+    restatus(q);
     return q;
   }
   function fromMiniTicker(q, d) {
@@ -267,10 +272,23 @@
       volume: Number(d.v), quote_currency: "USDT", change_basis: "24h", source: "Binance", provider: "binance",
       provider_symbol: d.s, source_note: `${d.s.replace(/USDT$/, "")}/USDT on Binance, streamed live into your browser`,
       kind: "stream", is_proxy: false, is_unofficial: false, fallback: false, error_message: null,
-      source_timestamp: new Date(d.E).toISOString(), received_at: new Date().toISOString(),
-      status: "LIVE", status_label: "Live", status_detail: "Streaming; updated within the last 5 seconds",
+      source_timestamp: new Date(d.E).toISOString(), received_at: new Date().toISOString(), browser_live: true,
     });
   }
+  // gold-api.com sends CORS headers and needs no key, so gold and silver are fetched straight into this browser.
+  // The change keeps the snapshot's baseline (prev_close and what it means); only the price and its time are new.
+  function fromGoldApi(q, d) {
+    const price = Number(d.price);
+    const base = q.prev_close;
+    const change = base ? price - base : null;
+    return Object.assign({}, q, {
+      price, change, change_pct: change !== null ? change / base * 100 : null,
+      source: "gold-api.com", provider: "goldapi", provider_symbol: d.symbol, kind: "poll", is_proxy: false, is_unofficial: false,
+      fallback: false, error_message: null, source_note: `Spot ${d.name ? d.name.toLowerCase() : d.symbol}, USD per troy ounce, fetched by your browser from gold-api.com`,
+      source_timestamp: new Date(d.updatedAt).toISOString(), received_at: new Date().toISOString(), browser_live: true,
+    });
+  }
+  const GOLD_API = { XAU: "XAU", XAG: "XAG" };
 
   window.MLW_STATIC_LIVE = function (dispatch, setConn) {
     let first = true, ws = null, retry = 1000;
@@ -279,17 +297,27 @@
     async function loadSnapshot() {
       try {
         const d = await getJSON("quotes.json", true);
+        if (window.MLWStatus) window.MLWStatus.setCalendar(d.calendar);
         const out = [];
         for (const raw of d.quotes) {
           const cur = LIVE.quotes.get(raw.id);
-          if (cur && cur.provider === "binance" && cur.kind === "stream" && Date.now() - (LIVE.lastMsg.get(raw.id) || 0) < 60000) continue;
+          if (cur && cur.browser_live && raw.source_timestamp && cur.source_timestamp
+              && Date.parse(cur.source_timestamp) >= Date.parse(raw.source_timestamp)) {
+            // This browser already has a newer price (Binance / gold-api); keep it, take the snapshot's newer baseline.
+            if (cur.provider === "goldapi" && raw.prev_close && raw.prev_close !== cur.prev_close) {
+              const q = Object.assign({}, cur, { prev_close: raw.prev_close, change_basis: raw.change_basis });
+              q.change = q.price - q.prev_close; q.change_pct = q.change / q.prev_close * 100;
+              LIVE.quotes.set(raw.id, q); out.push(q);
+            }
+            continue;
+          }
           const q = adapt(raw);
           LIVE.quotes.set(q.id, q);
           out.push(q);
           checkAlerts(q);
         }
         dispatch({ type: first ? "snapshot" : "quotes", quotes: first ? [...LIVE.quotes.values()] : out });
-        if (first) { first = false; startStream(); }
+        if (first) { first = false; startStream(); pollGold(); setInterval(pollGold, 75000); }
         if (!ws || ws.readyState !== 1) setConn("ok", "Website · updated " + new Date(d.built_at).toLocaleTimeString("en-US", { timeZone: "Asia/Jakarta", hour: "numeric", minute: "2-digit", hour12: true }));
       } catch (e) { setConn("bad", "Could not load data"); }
     }
@@ -308,6 +336,7 @@
         const id = map.get(d.s);
         if (id === undefined) return;
         const q = fromMiniTicker(LIVE.quotes.get(id), d);
+        restatus(q);
         LIVE.quotes.set(id, q);
         LIVE.lastMsg.set(id, Date.now());
         changed.add(id);
@@ -317,21 +346,31 @@
       ws.onerror = () => { try { ws.close(); } catch (e) { /* ignore */ } };
     }
 
-    // Every second: send changed prices and keep the badges honest (LIVE only while updates keep arriving).
+    // Gold and silver straight from gold-api.com every 75 s; if the browser is blocked, the snapshot price stays.
+    async function pollGold() {
+      for (const q0 of [...LIVE.quotes.values()]) {
+        const sym = GOLD_API[q0.symbol];
+        if (!sym) continue;
+        try {
+          const r = await fetch(`https://api.gold-api.com/price/${sym}`, { cache: "no-store" });
+          if (!r.ok) continue;
+          const d = await r.json();
+          if (!(Number(d.price) > 0) || !d.updatedAt) continue;
+          const cur = LIVE.quotes.get(q0.id);
+          if (cur.source_timestamp && Date.parse(d.updatedAt) < Date.parse(cur.source_timestamp)) continue;
+          const q = fromGoldApi(cur, d);
+          restatus(q);
+          LIVE.quotes.set(q0.id, q);
+          changed.add(q0.id);
+          checkAlerts(q);
+        } catch (e) { /* blocked or offline: keep the snapshot price */ }
+      }
+    }
+
+    // Every second: send changed prices and keep every badge honest for the current time (market-status.js).
     setInterval(() => {
       const now = Date.now();
-      for (const [id, t] of LIVE.lastMsg) {
-        const q = LIVE.quotes.get(id);
-        if (!q || q.kind !== "stream") continue;
-        const age = (now - t) / 1000;
-        const st = age <= 5 ? "LIVE" : age <= 120 ? "DELAYED" : "STALE";
-        if (q.status !== st) {
-          q.status = st;
-          q.status_label = st === "LIVE" ? "Live" : st === "DELAYED" ? "Delayed" : "Stale";
-          q.status_detail = st === "LIVE" ? "Streaming; updated within the last 5 seconds" : st === "DELAYED" ? "Stream connected; no new trade in the last few seconds" : "No update from the stream for over 2 minutes";
-          changed.add(id);
-        }
-      }
+      for (const [id, q] of LIVE.quotes) if (restatus(q, now)) changed.add(id);
       if (changed.size) {
         dispatch({ type: "quotes", quotes: [...changed].map((id) => LIVE.quotes.get(id)) });
         changed.clear();
@@ -339,7 +378,7 @@
     }, 1000);
 
     loadSnapshot();
-    setInterval(loadSnapshot, 120000);
+    setInterval(loadSnapshot, 60000);
   };
 
   // ---------------------------------------------------------------- page fills from this browser's progress

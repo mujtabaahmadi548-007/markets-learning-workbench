@@ -28,11 +28,11 @@
 </section>
 
 <section class="card">
-  {% if live_crypto %}
-  <h2>Prices</h2>
-  <p class="small muted">Crypto rows update live in this page from the same feed as the Dashboard (change over 24 hours), with the
-    price stored at briefing time shown under each one. Other rows are the real quotes stored when the briefing was made
-    (change vs the previous close or previous day).</p>
+  {% if live_prices %}
+  <h2>Prices now and at briefing time</h2>
+  <p class="small muted">Each row shows the current price from the same feed as the Dashboard, with the price stored when this
+    briefing was made under it ("at briefing"). The status is worked out from the current time, the quote's own time and the
+    market's hours. Crypto changes are over 24 hours; others vs the previous close or previous day.</p>
   {% else %}
   <h2>Prices at briefing time</h2>
   <p class="small muted">Real stored quotes copied when the briefing was made. Crypto changes are over 24 hours; others vs the previous close or previous day.</p>
@@ -43,14 +43,15 @@
     {% for m in c.moves %}
       {% set pct = m.change_pct %}
       {% if m.currency == "%" %}{% set dir = m.change or 0 %}{% else %}{% set dir = pct if pct is not none and pct|abs >= 0.005 else 0 %}{% endif %}
-      <tr data-symbol="{{ m.symbol }}"{% if live_crypto and m.asset_class == "crypto" %} data-live data-ts="{{ m.source_timestamp or '' }}"{% endif %}>
+      {% set live = live_prices and m.price is not none %}
+      <tr data-symbol="{{ m.symbol }}"{% if live %} data-live data-ts="{{ m.source_timestamp or '' }}"{% endif %}>
         <td><a href="/asset/{{ m.symbol }}">{{ m.symbol }}</a> <span class="small muted">{{ m.name }}</span></td>
-        <td class="r num" data-f="price">{% if m.price is not none %}{{ "{:,.{}f}".format(m.price, m.decimals) }}{% if m.currency == "%" %}%{% endif %}{% else %}—{% endif %}</td>
+        <td class="r num" data-f="price" data-stored="{% if m.price is not none %}{{ "{:,.{}f}".format(m.price, m.decimals) }}{% if m.currency == "%" %}%{% endif %}{% endif %}">{% if m.price is not none %}{{ "{:,.{}f}".format(m.price, m.decimals) }}{% if m.currency == "%" %}%{% endif %}{% if live %}<div class="small muted">at briefing · loading current price…</div>{% endif %}{% else %}—{% endif %}</td>
         <td class="r num {{ 'up' if dir > 0 else ('down' if dir < 0 else '') }}" data-f="change">
           {% if m.currency == "%" and m.change is not none %}{{ "{:+.2f}".format(m.change) }} pp
           {% elif pct is not none %}{{ "▲ +" if dir > 0 else ("▼ −" if dir < 0 else "■ ") }}{{ "{:.2f}".format(pct|abs) }}%
           {% else %}—{% endif %}</td>
-        <td class="small" data-f="status" title="Status when the briefing was made">{{ m.status.replace("_", " ") }}</td>
+        <td class="small" data-f="status" title="Status when the briefing was made">{% if live %}<span class="muted">at briefing: {{ m.status.replace("_", " ") }}</span>{% else %}{{ m.status.replace("_", " ") }}{% endif %}</td>
         <td class="small muted" data-f="source">{{ m.source or "—" }}{% if m.newer_note %} <span class="chip" title="{{ m.newer_note }}">newer data</span>{% endif %}
           {%- if m.source_timestamp %} · {% if m.kind == "daily" %}value for <time data-utc="{{ m.source_timestamp }}" data-daily>{{ m.source_timestamp[:10] }}</time>{% else %}<time data-utc="{{ m.source_timestamp }}">{{ m.source_timestamp }}</time>{% endif %}{% endif %}</td>
       </tr>
@@ -102,12 +103,13 @@
   const past = document.getElementById("past");
   if (past) past.onchange = () => { location.href = M.isStatic ? `${M.base}/briefing/${past.value}/` : "/briefing?day=" + past.value; };
 
-  // Live crypto rows (newest briefing only): the same live feed as the Dashboard (Binance in this browser on the website,
-  // the app's own stream locally). The stored briefing quote stays until a newer price arrives and is kept as a note.
+  // Current prices (newest briefing only): every row follows the same feed as the Dashboard (website: the latest
+  // snapshot + Binance and gold-api.com in this browser; locally: the app's own feed). The price stored when the
+  // briefing was made stays under each row as "at briefing", so the reference is never lost or mixed up with now.
   const rows = new Map();
   document.querySelectorAll("#brief-prices tr[data-live]").forEach((tr) => {
     const cell = tr.querySelector('[data-f="price"]');
-    rows.set(tr.dataset.symbol, { tr, ts: Date.parse(tr.dataset.ts || "") || 0, stored: cell.textContent.trim(), q: null });
+    rows.set(tr.dataset.symbol, { tr, ts: Date.parse(tr.dataset.ts || "") || 0, stored: cell.dataset.stored, q: null });
   });
   if (!rows.size) return;
 
@@ -118,22 +120,30 @@
     if (cls !== undefined && el.className !== cls) el.className = cls;
     return el;
   }
+  const BASIS = { "24h": "Change over 24 hours", "24h_recorded": "Change over 24 hours (recorded by this app)",
+    "prev_close": "Change vs the previous close", "prev_obs": "Change vs the previous day's value" };
   function paint(r) {
     const q = r.q, ts = new Date(q.source_timestamp);
-    const pct = q.change_pct, has = pct !== null && pct !== undefined;
-    const up = has && pct >= 0.005, down = has && pct <= -0.005;
-    const change = has ? `<span title="Change over 24 hours (${M.esc(q.source || "")})">${up ? "▲ +" : down ? "▼ −" : "■ "}${M.fmtNum(Math.abs(pct), 2)}%</span>` : "—";
+    let change = "—", up = false, down = false;
+    if (q.currency === "%" && q.change !== null && q.change !== undefined) {
+      up = q.change > 0.0005; down = q.change < -0.0005;
+      change = `<span title="Change in percentage points">${up ? "+" : down ? "−" : ""}${M.fmtNum(Math.abs(q.change), 2)} pp</span>`;
+    } else if (q.change_pct !== null && q.change_pct !== undefined) {
+      const pct = q.change_pct;
+      up = pct >= 0.005; down = pct <= -0.005;
+      change = `<span title="${M.esc((BASIS[q.change_basis] || "Change") + " · " + (q.source || ""))}">${up ? "▲ +" : down ? "▼ −" : "■ "}${M.fmtNum(Math.abs(pct), 2)}%</span>`;
+    }
     const b = M.badge(q);
     setCell(r.tr, "price", `${M.fmtPrice(q)}<div class="small muted" title="Stored when the briefing was made">at briefing ${M.esc(r.stored)}</div>`);
     setCell(r.tr, "change", change, `r num ${up ? "up" : down ? "down" : ""}`);
     const st = setCell(r.tr, "status", `<span class="badge ${b.cls}" title="${M.esc(b.title)}">${M.esc(b.text)}</span>`);
     if (st) st.removeAttribute("title");
-    setCell(r.tr, "source", `<span title="${M.esc(q.source_note || "")}">${M.esc(q.source || "—")}</span> · ` +
-      `<span title="${M.esc(M.utcLabel(ts))}">${M.esc(M.formatJakarta(ts))}</span>`);
+    const when = q.kind === "daily" ? `value for ${M.esc(M.dateOnly(ts))}` : `<span title="${M.esc(M.utcLabel(ts))}">${M.esc(M.formatJakarta(ts))}</span>`;
+    setCell(r.tr, "source", `<span title="${M.esc(q.source_note || "")}">${M.esc(q.source || "—")}</span>${q.newer_note ? ` <span class="chip" title="${M.esc(q.newer_note)}">newer data</span>` : ""} · ${when}`);
   }
   function update(q) {
     const r = rows.get(q.symbol);
-    if (!r || q.asset_class !== "crypto" || q.price === null || q.price === undefined || !q.source_timestamp) return;
+    if (!r || q.price === null || q.price === undefined || !q.source_timestamp) return;
     if (Date.parse(q.source_timestamp) < r.ts) return;  // never replace the stored quote with an older one
     const prev = r.q && r.q.price;
     r.q = q;

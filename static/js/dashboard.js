@@ -95,7 +95,7 @@
 
   function renderMovers() {
     const list = [...quotes.values()].filter((q) => q.change_pct !== null && q.change_pct !== undefined && q.currency !== "%"
-      && ["LIVE", "DELAYED", "MARKET_CLOSED"].includes(q.status) && q.kind !== "daily");
+      && ["LIVE", "DELAYED", "MARKET_CLOSED", "PRE_MARKET", "AFTER_HOURS"].includes(q.status) && q.kind !== "daily");
     const el = document.getElementById("movers");
     if (!list.length) { el.innerHTML = '<p class="muted">Waiting for prices…</p>'; return; }
     list.sort((a, b) => b.change_pct - a.change_pct);

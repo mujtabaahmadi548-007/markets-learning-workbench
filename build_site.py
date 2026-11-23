@@ -1,6 +1,6 @@
 r"""Build the website version (GitHub Pages) of the Markets Learning Workbench.
 
-GitHub runs this about every 10 minutes (.github/workflows/site.yml). It starts the real app engine for
+GitHub runs this about every 5 minutes (.github/workflows/site.yml). It starts the real app engine for
 about a minute, collects fresh prices and news, does a small, budgeted amount of AI work, then writes
 every page and data file into a folder that GitHub Pages publishes.
 
@@ -54,6 +54,7 @@ from app.ai.gemini_client import AIError  # noqa: E402
 from app.ai.pacing import briefing_date_in_quota_day, paced_allowance  # noqa: E402
 from app.main import create_app  # noqa: E402
 from app.models.tables import AppSetting, Breakdown, NewsArticle, QuizQuestion  # noqa: E402
+from app.services import market_hours as mh  # noqa: E402
 from app.services.candles import RANGES  # noqa: E402
 from app.timeutil import JAKARTA, utcnow  # noqa: E402
 
@@ -108,6 +109,34 @@ def wait_for_prices(st, seconds: int) -> None:  # noqa: ANN001
     for v in views:
         by[v["status"]] = by.get(v["status"], 0) + 1
     say(f"prices: {by}")
+    report_sources(views)
+
+
+def report_sources(views: list[dict]) -> None:
+    """One build-log line per failing source (shown on the website's Health page), so a refused key or a rate limit
+    is visible at once instead of prices quietly freezing or moving to a backup."""
+    failing: dict[str, tuple[str, list[str]]] = {}
+    for v in views:
+        for d in v.get("diagnostics") or []:
+            if d.get("error"):
+                msg, syms = failing.setdefault(d["provider"], (d["error"], []))
+                syms.append(v["symbol"])
+    for provider, (msg, syms) in sorted(failing.items()):
+        say(f"source problem: {msg} (for {', '.join(syms[:8])}{'…' if len(syms) > 8 else ''})")
+    backups = [v["symbol"] for v in views if v.get("fallback")]
+    if backups:
+        say(f"backup source in use for: {', '.join(backups)}")
+
+
+def write_quotes(out: Path, st) -> None:  # noqa: ANN001
+    """The price snapshot, written last so it is as fresh as possible when the site goes live. The browser works out
+    each status itself from the current time (static/js/market-status.js), using the holiday calendar below."""
+    views = st.feeds.views()
+    year = utcnow().year
+    now = utcnow().isoformat()
+    dump(out, "quotes.json", {"built_at": now, "quotes": views, "calendar": mh.holiday_calendar([year - 1, year, year + 1])})
+    stamps = {v["symbol"]: v["source_timestamp"] for v in views if v["symbol"] in ("NVDA", "SPX", "XAU", "WTI", "DXY", "US10Y")}
+    say("quotes: " + ", ".join(f"{s} {t[5:16] if t else '-'}" for s, t in stamps.items()) + " (source times, UTC)")
 
 
 def collect_news(st, portal, state: dict) -> None:  # noqa: ANN001
@@ -191,7 +220,8 @@ def ai_work(st, portal, state: dict, max_tasks: int) -> None:  # noqa: ANN001
         mark(state, "auto_breakdown")
     # 4) 'Why did it move?' for the biggest movers (each at most every 3 hours).
     movers = sorted([v for v in st.feeds.views() if v["change_pct"] is not None and v["kind"] != "daily"
-                     and v["status"] in ("LIVE", "DELAYED", "MARKET_CLOSED")], key=lambda v: -abs(v["change_pct"]))[:3]
+                     and v["status"] in ("LIVE", "DELAYED", "MARKET_CLOSED", "PRE_MARKET", "AFTER_HOURS")],
+                    key=lambda v: -abs(v["change_pct"]))[:3]
     why_state = state.setdefault("why", {})
     for v in movers:
         last = why_state.get(v["symbol"])
@@ -255,7 +285,7 @@ def export(client, st, portal, out: Path) -> None:  # noqa: ANN001
 
     # Data files
     portal.call(st.candles.refresh_sparklines, list(st.feeds.assets.values()))
-    dump(out, "quotes.json", {"built_at": built, "quotes": st.feeds.views()})
+    write_quotes(out, st)  # early copy, so the data folder is complete even if a later step fails
     dump(out, "sparklines.json", client.get("/api/sparklines").json())
     articles = st.news.query(hours=72, limit=5000)
     for a in articles:
@@ -311,6 +341,8 @@ def export(client, st, portal, out: Path) -> None:  # noqa: ANN001
     dump(out, "moves/index.json", with_moves)
     say(f"pages: {n} written")
     check_links(out)
+    report_sources(st.feeds.views())
+    write_quotes(out, st)  # again at the very end: the price engine kept polling while the pages were written
     dump(out, "meta.json", {"built_at": built, "log": LOG[-40:], "entries": ENTRIES[-40:]})
 
 

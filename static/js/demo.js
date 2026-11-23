@@ -84,6 +84,9 @@
   }
   function whyNotFillable(q) {
     if (!q || q.price === null || q.price === undefined) return "No real price for this asset yet - wait a moment.";
+    if (q.status === "PRE_MARKET" || q.status === "AFTER_HOURS") {
+      return `${q.symbol} is in ${q.status === "PRE_MARKET" ? "pre-market" : "after-hours"} trading; demo orders fill only in the regular session (9:30 AM-4:00 PM New York time).`;
+    }
     if (q.status === "MARKET_CLOSED") {
       const opens = q.market && q.market.next_open ? " It opens " + M.dayJakarta(new Date(q.market.next_open)) + " (Jakarta time)." : "";
       return `The ${q.symbol} market is closed, so a demo order cannot fill now.${opens}`;
@@ -198,9 +201,9 @@
     else if (d.timeframe !== plan[1]) extra = ` (only ${TF_NAME[d.timeframe] || d.timeframe} candles are available)`;
     const out = { candles: cs, step, provider: d.provider, symbol: d.symbol, source: d.source, proxy: !!d.is_proxy, unofficial: !!d.is_unofficial,
       note: `Real ${d.source} ${d.symbol} ${TF_NAME[tf]} candles${extra}${d.is_unofficial ? ", unofficial source" : ""}.` +
-        (M.isStatic ? " On the website they are refreshed with every update (about every 10 minutes)." : "") };
+        (M.isStatic ? " On the website they are refreshed with every update (about every 5 minutes)." : "") };
     if (d.is_proxy) out.note = `PROXY: ${d.source} ${d.symbol} is a stand-in instrument (${d.note || "not the asset itself"}); its price differs from the price your trade uses, so your buy / take-profit / stop-loss lines are not drawn on it. Choose 1m for candles of the real price` +
-      (M.isStatic ? " (on the website this price updates about every 10 minutes, so those candles fill in slowly)." : ".");
+      (M.isStatic ? " (on the website this price updates about every 5 minutes, so those candles fill in slowly)." : ".");
     return out;
   }
   async function loadCandles(sym, tf) {

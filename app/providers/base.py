@@ -37,6 +37,10 @@ class ProviderRateLimited(ProviderError):
     pass
 
 
+class ProviderAuthError(ProviderError):
+    """The source refused the key (HTTP 401/403): every symbol is affected, so the whole provider cools down."""
+
+
 class UnsupportedError(ProviderError):
     pass
 
@@ -173,7 +177,8 @@ class Provider:
         if r.status_code == 429:
             raise ProviderRateLimited(f"{self.label}: rate limited (HTTP 429)")
         if r.status_code in (401, 403):
-            raise ProviderError(f"{self.label}: access refused (HTTP {r.status_code})")
+            hint = " - the API key was rejected" if self.requires_key else ""
+            raise ProviderAuthError(f"{self.label}: access refused (HTTP {r.status_code}){hint}")
         if r.status_code >= 400:
             raise ProviderError(f"{self.label}: HTTP {r.status_code}")
         try:

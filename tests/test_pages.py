@@ -32,7 +32,9 @@ def test_all_pages_render() -> None:
         assert c.get("/api/assets/NOPE").status_code == 404
 
 
-def test_briefing_live_crypto_only_on_newest_briefing() -> None:
+def test_briefing_live_prices_only_on_newest_briefing() -> None:
+    """Every row of the newest briefing follows current prices (not only crypto), keeping the briefing-time price
+    as an "at briefing" reference; older briefings stay frozen records of their day."""
     from datetime import date
 
     get_settings.cache_clear()
@@ -55,9 +57,12 @@ def test_briefing_live_crypto_only_on_newest_briefing() -> None:
         st.briefing._save(date(2026, 11, 21), content)
         newest = c.get("/briefing").text
         assert '<tr data-symbol="BTC" data-live data-ts="2026-11-21T08:06:37+00:00">' in newest
-        assert 'data-symbol="SPX" data-live' not in newest and 'title="FRED ends on 19 Nov."' in newest
+        assert '<tr data-symbol="SPX" data-live data-ts="2026-11-20T21:35:54+00:00">' in newest
+        assert 'title="FRED ends on 19 Nov."' in newest and 'data-stored="6,910.39"' in newest
+        # the briefing-time status is labelled as such, never shown as the current status
+        assert "at briefing: MARKET CLOSED" in newest and "Prices now and at briefing time" in newest
         assert "value for <time" in newest and "data-daily" in newest and "▼ −3.70%" in newest
-        assert c.get("/briefing?day=2026-11-21").text.count(" data-live data-ts=") == 1
+        assert c.get("/briefing?day=2026-11-21").text.count(" data-live data-ts=") == 3
         older = c.get("/briefing?day=2026-11-20").text
         assert " data-live data-ts=" not in older and "Prices at briefing time" in older
 

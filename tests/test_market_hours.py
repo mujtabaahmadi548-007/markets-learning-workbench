@@ -66,3 +66,25 @@ def test_daylight_saving_shift() -> None:
     assert mh.next_open(mh.US_EQUITY, ny(2026, 3, 6, 18)) == ny(2026, 3, 9, 9, 30)
     assert ny(2026, 3, 9, 9, 30) == datetime(2026, 3, 9, 13, 30, tzinfo=timezone.utc)
     assert ny(2026, 3, 5, 9, 30) == datetime(2026, 3, 5, 14, 30, tzinfo=timezone.utc)
+
+
+def test_us_equity_phases_and_session_start() -> None:
+    assert mh.us_equity_phase(ny(2026, 11, 23, 3, 59)) == "closed"
+    assert mh.us_equity_phase(ny(2026, 11, 23, 4, 0)) == "pre"
+    assert mh.us_equity_phase(ny(2026, 11, 23, 12, 53)) == "regular"
+    assert mh.us_equity_phase(ny(2026, 11, 23, 16, 30)) == "post"
+    assert mh.us_equity_phase(ny(2026, 11, 23, 20, 0)) == "closed"
+    assert mh.us_equity_phase(ny(2026, 11, 22, 12, 0)) == "closed"  # Sunday
+    assert mh.us_equity_phase(ny(2026, 11, 26, 12, 0)) == "closed"  # Thanksgiving
+    assert mh.us_equity_phase(ny(2026, 11, 27, 14, 0)) == "post"  # early close 13:00 the day after
+    assert mh.session_start(mh.US_EQUITY, ny(2026, 11, 23, 12, 53)) == ny(2026, 11, 23, 9, 30)
+    assert mh.session_start(mh.FUTURES, ny(2026, 11, 23, 12, 53)) == ny(2026, 11, 22, 18, 0)
+    assert mh.session_start(mh.US_EQUITY, ny(2026, 11, 22, 12, 0)) is None
+    info = mh.session_info(mh.US_EQUITY, ny(2026, 11, 23, 7, 0))
+    assert not info.open and info.phase == "pre" and "Pre-market" in info.reason
+
+
+def test_holiday_calendar_for_the_browser() -> None:
+    cal = mh.holiday_calendar([2026])
+    assert "2026-11-26" in cal["nyse_holidays"] and "2026-12-25" in cal["nyse_holidays"]
+    assert "2026-11-27" in cal["nyse_early_close"] and "2026-12-24" in cal["nyse_early_close"]

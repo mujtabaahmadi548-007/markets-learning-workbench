@@ -30,7 +30,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from app.db.session import Database
 from app.logging_setup import redact
 from app.models.tables import AppSetting, PriceSnapshot, ProviderStatus, QuoteLatest
-from app.providers.base import Provider, ProviderError, ProviderRateLimited, QuoteData
+from app.providers.base import Provider, ProviderAuthError, ProviderError, ProviderRateLimited, QuoteData
 from app.services import market_hours as mh
 from app.services import status as st
 from app.services.assets import AssetRT, ChainEntry
@@ -197,6 +197,9 @@ class FeedManager:
         self._poll_tasks: set[asyncio.Task] = set()
         self.on_update: list = []  # callbacks(asset_id) after every applied price update (alerts)
         self._session_cache: dict[str, tuple[float, mh.SessionInfo]] = {}
+        # Per-source fetch diagnostics, (asset, provider, symbol) -> last attempt / last success / last error, so a
+        # failing source is visible (asset JSON, website quotes file, build log) instead of silently freezing a price.
+        self.diag: dict[tuple[int, str, str], dict[str, Any]] = {}
 
     # ------------------------------------------------------------------ lifecycle
     async def start(self) -> None:
@@ -427,29 +430,62 @@ class FeedManager:
         arrives (a daily source's companion is polled too, but only compared)."""
         key = (asset.id, p.name)
         health = self.health[p.name]
+        d = self._diag(asset.id, p.name, entry.symbol)
+        d["last_attempted_at"] = utcnow()
         try:
             q = await asyncio.wait_for(p.get_quote(entry.symbol), timeout=30)
+            self._check_session(asset, entry, p, q)
             health.record_success(entry.symbol)
+            d["last_succeeded_at"], d["error"], d["source_timestamp"] = utcnow(), None, q.source_timestamp
             self.latest[(asset.id, p.name, entry.symbol)] = (q, time.monotonic())
             if self._is_active(asset.id, entry):
                 self._apply(asset, entry, p, q, mode)
-        except ProviderRateLimited as e:
+        except (ProviderRateLimited, ProviderAuthError) as e:  # affects every symbol of this source
             health.record_error(str(e), entry.symbol, provider_wide=True)
+            d["error"] = str(e)
             self._note_error(asset, p, str(e), entry)
         except ProviderError as e:
             health.record_error(str(e), entry.symbol)
+            d["error"] = str(e)
             self._note_error(asset, p, str(e), entry)
         except asyncio.TimeoutError:
             health.record_error(f"{p.label}: no answer within 30 s", entry.symbol)
+            d["error"] = f"{p.label}: no answer within 30 s"
             self._note_error(asset, p, "no answer within 30 s", entry)
         except Exception as e:  # noqa: BLE001
             msg = redact(f"{type(e).__name__}: {e}")[:200]
             log.exception("poll %s %s failed", p.name, entry.symbol)
             health.record_error(f"{p.label}: {msg}", entry.symbol)
+            d["error"] = f"{p.label}: {msg}"
             self._note_error(asset, p, msg, entry)
         finally:
             self.polling.discard(key)
             self.next_poll[key] = time.monotonic() + p.poll_interval
+
+    def _diag(self, asset_id: int, provider: str, symbol: str) -> dict[str, Any]:
+        k = (asset_id, provider, symbol)
+        if k not in self.diag:
+            self.diag[k] = {"provider": provider, "symbol": symbol, "last_attempted_at": None,
+                            "last_succeeded_at": None, "error": None, "source_timestamp": None}
+        return self.diag[k]
+
+    def _check_session(self, asset: AssetRT, entry: ChainEntry, p: Provider, q: QuoteData) -> None:
+        """A polled quote from before the session that is open now (e.g. Friday's close on Monday afternoon) counts
+        as a failure when a later intraday source exists in the chain, so that source takes over instead of the
+        price sitting on an old session."""
+        if p.kind == "daily":
+            return
+        sess = self.session(asset.schedule)
+        if not sess.open or sess.opened_at is None or q.source_timestamp >= sess.opened_at:
+            return
+        if (utcnow() - sess.opened_at).total_seconds() <= st.SESSION_GRACE:
+            return
+        idx = asset.quote_chain.index(entry)
+        if not any(j > idx and p2.kind != "daily" for j, _, p2 in self._configured_entries(asset)):
+            return
+        when = q.source_timestamp.astimezone(NEW_YORK)
+        raise ProviderError(f"{p.label}: quote is from {when:%a %d %b %H:%M} New York time, before the session "
+                            "that is open now; using the next source")
 
     def _note_error(self, asset: AssetRT, p: Provider, message: str, entry: ChainEntry | None = None) -> None:
         if entry is not None and not self._is_active(asset.id, entry):
@@ -464,6 +500,9 @@ class FeedManager:
         for asset in self.assets.values():
             choice = self.active.get(asset.id)
             if choice and choice[1].provider == p.name and choice[1].symbol == symbol:
+                d = self._diag(asset.id, p.name, symbol)
+                d["last_attempted_at"] = d["last_succeeded_at"] = utcnow()
+                d["error"], d["source_timestamp"] = None, q.source_timestamp
                 self._apply(asset, choice[1], p, q, "trade" if p.name == "finnhub" else "full")
 
     def _apply(self, asset: AssetRT, entry: ChainEntry, p: Provider, q: QuoteData, mode: str) -> None:
@@ -553,7 +592,15 @@ class FeedManager:
             source_timestamp=lq.source_timestamp, last_success_at=lq.last_success_at, last_error_at=lq.last_error_at,
             error_message=lq.error_message, poll_interval=lq.poll_interval, expected_delay=lq.expected_delay,
             unavailable_reason=unavailable, daily_max_age_days=lq.max_age_days or st.DAILY_STALE_DAYS,
+            phase=sess.phase, session_opened_at=sess.opened_at,
         ))
+        cadence = "intraday"
+        if lq.kind == "daily":
+            cadence = "weekly" if (lq.max_age_days or 0) >= st.WEEKLY_MIN_DAYS else "daily"
+        diagnostics = [
+            {k: (iso(v) if isinstance(v, datetime) else v) for k, v in self.diag[(asset_id, e.provider, e.symbol)].items()}
+            for e in asset.quote_chain if (asset_id, e.provider, e.symbol) in self.diag
+        ]
         return {
             "id": asset.id, "symbol": asset.symbol, "name": asset.name, "asset_class": asset.asset_class,
             "decimals": asset.decimals, "currency": asset.currency,
@@ -562,13 +609,14 @@ class FeedManager:
             "quote_currency": lq.quote_currency,
             "provider": lq.provider, "provider_symbol": lq.provider_symbol, "source": lq.provider_label,
             "source_note": lq.entry_note, "kind": lq.kind, "is_proxy": lq.is_proxy, "is_unofficial": lq.is_unofficial,
-            "fallback": lq.fallback, "newer_note": lq.newer_note,
+            "fallback": lq.fallback, "newer_note": lq.newer_note, "cadence": cadence, "max_age_days": lq.max_age_days,
+            "diagnostics": diagnostics,
             "status": res.status, "status_label": res.label, "status_detail": res.detail,
             "source_timestamp": iso(lq.source_timestamp), "received_at": iso(lq.received_at),
             "last_success_at": iso(lq.last_success_at), "last_error_at": iso(lq.last_error_at),
             "error_message": lq.error_message if (lq.last_error_at and (not lq.last_success_at or lq.last_error_at > lq.last_success_at)) else None,
             "market": {"open": sess.open, "reason": sess.reason, "last_close": iso(sess.last_close),
-                       "next_open": iso(sess.next_open), "schedule": asset.schedule},
+                       "next_open": iso(sess.next_open), "schedule": asset.schedule, "phase": sess.phase},
         }
 
     def _missing_keys_text(self, asset: AssetRT) -> str:

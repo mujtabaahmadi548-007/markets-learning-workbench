@@ -193,3 +193,52 @@ def test_us_stock_ignores_after_hours_trades(tmp_path: Path) -> None:
         assert q["price"] == 100.0 and q["change"] == 1.0  # the regular-session close stays
 
     asyncio.run(run())
+
+
+class OldSession(FakePoll):
+    """Answers with a quote from three days ago (e.g. Friday's close on Monday afternoon)."""
+
+    async def get_quote(self, symbol: str) -> QuoteData:
+        self.calls += 1
+        from datetime import timedelta
+        return QuoteData(price=self.price, source_timestamp=utcnow() - timedelta(days=3), change=-1.0, change_pct=-1.0,
+                         prev_close=self.price + 1)
+
+
+def test_quote_from_before_the_open_session_falls_back(tmp_path: Path) -> None:
+    """Open US session + the first source only has the previous session's quote -> the next source is used, and the
+    reason is visible in the per-source diagnostics (never a silent freeze on Friday's close)."""
+    from datetime import timedelta
+
+    async def run() -> None:
+        a, b = OldSession("a", 125.53), FakePoll("b", 163.76)
+        mgr = make(tmp_path, [ChainEntry("a", "NVDA"), ChainEntry("b", "NVDA")], {"a": a, "b": b}, schedule=mh.US_EQUITY)
+        opened = utcnow() - timedelta(hours=3)
+        mgr.session = lambda schedule: mh.SessionInfo(True, "Market open", None, None, "regular", opened)  # type: ignore[method-assign]
+        await settle(mgr, 6)
+        q = mgr.view(1)
+        assert q["provider"] == "b" and q["price"] == 163.76 and q["fallback"] is True
+        diag = {d["provider"]: d for d in q["diagnostics"]}
+        assert "before the session" in diag["a"]["error"] and diag["a"]["last_attempted_at"]
+        assert diag["b"]["error"] is None and diag["b"]["last_succeeded_at"]
+
+    asyncio.run(run())
+
+
+def test_refused_key_cools_down_the_whole_provider(tmp_path: Path) -> None:
+    from app.providers.base import ProviderAuthError
+
+    class Refused(FakePoll):
+        async def get_quote(self, symbol: str) -> QuoteData:
+            self.calls += 1
+            raise ProviderAuthError(f"{self.label}: access refused (HTTP 401) - the API key was rejected")
+
+    async def run() -> None:
+        a, b = Refused("a", 1.0), FakePoll("b", 2.0)
+        mgr = make(tmp_path, [ChainEntry("a", "X"), ChainEntry("b", "Y")], {"a": a, "b": b})
+        await settle(mgr, 5)
+        assert mgr.view(1)["provider"] == "b"
+        assert not mgr.health["a"].usable()  # provider-wide cooldown, not only this symbol
+        assert "HTTP 401" in mgr.view(1)["diagnostics"][0]["error"]
+
+    asyncio.run(run())

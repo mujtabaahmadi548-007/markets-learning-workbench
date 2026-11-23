@@ -64,10 +64,29 @@ def test_unavailable() -> None:
 
 
 def test_daily_series() -> None:
-    assert s(kind="daily", source_timestamp=NOW - timedelta(days=1), market_open=False).status == st.DELAYED
+    assert s(kind="daily", source_timestamp=NOW - timedelta(days=1), market_open=False).status == st.DAILY_EOD
     assert s(kind="daily", source_timestamp=NOW - timedelta(days=9)).status == st.STALE
-    # A weekly-published series may be 9 days old and still current.
-    assert s(kind="daily", source_timestamp=NOW - timedelta(days=9), daily_max_age_days=10).status == st.DELAYED
+    # A weekly-published series (FRED broad dollar index) may be 9 days old and still current: WEEKLY, not DELAYED.
+    assert s(kind="daily", source_timestamp=NOW - timedelta(days=9), daily_max_age_days=10).status == st.WEEKLY
+
+
+def test_extended_hours_for_us_stocks() -> None:
+    assert s(kind="poll", market_open=False, phase="pre", source_timestamp=NOW - timedelta(hours=15)).status == st.PRE_MARKET
+    assert s(kind="poll", market_open=False, phase="post", source_timestamp=NOW - timedelta(minutes=30)).status == st.AFTER_HOURS
+    assert s(kind="poll", market_open=False, phase="closed", source_timestamp=NOW - timedelta(days=2)).status == st.MARKET_CLOSED
+
+
+def test_open_session_with_previous_session_quote_is_stale_not_closed() -> None:
+    # Monday 23 Nov 2026 12:53 ET: the session opened at 09:30 ET; Friday's 16:00 close is STALE (never MARKET_CLOSED).
+    now = datetime(2026, 11, 23, 17, 53, tzinfo=timezone.utc)
+    opened = datetime(2026, 11, 23, 14, 30, tzinfo=timezone.utc)
+    friday = datetime(2026, 11, 20, 21, 0, tzinfo=timezone.utc)
+    r = s(now=now, kind="poll", expected_delay=1800, source_timestamp=friday, last_success_at=now, session_opened_at=opened)
+    assert r.status == st.STALE and "before this session" in r.detail
+    # ... but within the first 15 minutes after the open a slightly earlier quote from a delayed source is still DELAYED.
+    r = s(now=opened + timedelta(minutes=5), kind="poll", expected_delay=1800, source_timestamp=opened - timedelta(minutes=5),
+          last_success_at=now, session_opened_at=opened)
+    assert r.status == st.DELAYED
 
 
 def test_fmt_age() -> None:

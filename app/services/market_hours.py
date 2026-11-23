@@ -87,6 +87,38 @@ def is_open(schedule: str, now: datetime) -> bool:
     raise ValueError(f"unknown schedule {schedule!r}")
 
 
+PRE_OPEN = time(4, 0)  # NYSE Arca pre-market starts 04:00 ET
+EXTENDED_HOURS_AFTER_CLOSE = 4  # after-hours runs until 20:00 ET (17:00 on early-close days)
+
+
+def us_equity_phase(now: datetime) -> str:
+    """'regular', 'pre' (04:00-09:30 ET), 'post' (close to close+4 h) or 'closed' (night, weekend, holiday)."""
+    local = _ny(now)
+    d, t = local.date(), local.time()
+    if not is_nyse_trading_day(d):
+        return "closed"
+    close = nyse_close_time(d)
+    if time(9, 30) <= t < close:
+        return "regular"
+    if PRE_OPEN <= t < time(9, 30):
+        return "pre"
+    if close <= t < time(close.hour + EXTENDED_HOURS_AFTER_CLOSE, close.minute):
+        return "post"
+    return "closed"
+
+
+def session_start(schedule: str, now: datetime) -> datetime | None:
+    """When the session that is open right now began (UTC); None if closed or 24/7."""
+    if schedule == CRYPTO or not is_open(schedule, now):
+        return None
+    t = _floor_step(now)
+    for _ in range(16 * 48):
+        if is_open(schedule, t) and not is_open(schedule, t - timedelta(minutes=1)):
+            return t
+        t -= STEP
+    return None
+
+
 def _floor_step(dt: datetime) -> datetime:
     dt = ensure_utc(dt).replace(second=0, microsecond=0)
     return dt - timedelta(minutes=dt.minute % 30)
@@ -122,6 +154,9 @@ class SessionInfo:
     reason: str  # short text for the UI
     last_close: datetime | None
     next_open: datetime | None
+    # 'regular' while open; for US stocks outside the regular session 'pre' / 'post' / 'closed'; others 'closed'.
+    phase: str = "regular"
+    opened_at: datetime | None = None  # start of the session that is open now
 
 
 def session_info(schedule: str, now: datetime) -> SessionInfo:
@@ -130,10 +165,15 @@ def session_info(schedule: str, now: datetime) -> SessionInfo:
         return SessionInfo(True, "Open 24/7", None, None)
     open_now = is_open(schedule, now)
     if open_now:
-        return SessionInfo(True, "Market open", last_close(schedule, now), None)
+        return SessionInfo(True, "Market open", last_close(schedule, now), None, "regular", session_start(schedule, now))
     local = _ny(now)
+    phase = us_equity_phase(now) if schedule == US_EQUITY else "closed"
     hol = nyse_holiday(local.date()) if schedule in (US_EQUITY, FUTURES) else None
-    if hol:
+    if phase == "pre":
+        reason = "Pre-market (regular session opens 9:30 AM New York time)"
+    elif phase == "post":
+        reason = "After-hours (the regular session has closed)"
+    elif hol:
         reason = f"Holiday: {hol}"
     elif local.weekday() >= 5 and not (schedule != US_EQUITY and local.weekday() == 6 and local.time() >= time(18, 0)):
         reason = "Weekend"
@@ -141,7 +181,20 @@ def session_info(schedule: str, now: datetime) -> SessionInfo:
         reason = "Daily break"
     else:
         reason = "Outside trading hours"
-    return SessionInfo(False, reason, last_close(schedule, now), next_open(schedule, now))
+    return SessionInfo(False, reason, last_close(schedule, now), next_open(schedule, now), phase)
+
+
+def holiday_calendar(years: list[int]) -> dict[str, list[str]]:
+    """For the browser's market-status logic: NYSE holidays and early-close days (13:00 ET) as YYYY-MM-DD."""
+    hol, early = [], []
+    for y in years:
+        hol += [d.isoformat() for d in sorted(_nyse_holidays(y))]
+        d = date(y, 1, 1)
+        while d.year == y:
+            if is_nyse_trading_day(d) and nyse_close_time(d) != time(16, 0):
+                early.append(d.isoformat())
+            d += timedelta(days=1)
+    return {"nyse_holidays": hol, "nyse_early_close": early}
 
 
 def now_utc() -> datetime:

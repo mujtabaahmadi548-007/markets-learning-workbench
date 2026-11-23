@@ -105,24 +105,29 @@
 
   function badge(q) {
     const age = q.source_timestamp ? (serverNow() - Date.parse(q.source_timestamp)) / 1000 : null;
-    let text, cls;
+    let text = window.MLWStatus ? window.MLWStatus.badgeText(q) : q.status, cls;
+    const valueDate = q.source_timestamp ? " · " + dateOnly(new Date(q.source_timestamp)) : "";
     switch (q.status) {
-      case "LIVE": text = "LIVE"; cls = "badge-live"; break;
+      case "LIVE": cls = "badge-live"; break;
       case "DELAYED":
         cls = "badge-delayed";
-        if (q.kind === "daily" && q.source_timestamp) text = "DAILY · " + dateOnly(new Date(q.source_timestamp));
-        else text = "DELAYED" + (age !== null ? " · " + fmtAge(age) : "");
+        if (q.kind === "daily") text += valueDate;
+        else if (age !== null) text += " · " + fmtAge(age);
         break;
-      case "MARKET_CLOSED": text = "MARKET CLOSED"; cls = "badge-closed"; break;
-      case "STALE": text = "STALE" + (age !== null ? " · " + fmtAge(age) : ""); cls = "badge-stale"; break;
-      case "ERROR": text = "ERROR"; cls = "badge-error"; break;
-      case "UNAVAILABLE": text = "N/A"; cls = "badge-closed"; break;
-      default: text = "CONNECTING…"; cls = "badge-closed";
+      case "DAILY_EOD": case "WEEKLY": cls = "badge-delayed"; text += valueDate; break;
+      case "PRE_MARKET": case "AFTER_HOURS": cls = "badge-closed"; break;
+      case "MARKET_CLOSED": cls = "badge-closed"; break;
+      case "STALE": if (age !== null) text += " · " + fmtAge(age); cls = "badge-stale"; break;
+      case "ERROR": cls = "badge-error"; break;
+      default: cls = "badge-closed";
     }
     let title = q.status_detail || "";
-    if (q.status === "MARKET_CLOSED" && q.market) {
+    if (q.status === "MARKET_CLOSED" && q.market && !q.status_by_browser) {
       title = `${q.market.reason}.` + (q.market.last_close ? ` Closed ${dayJakarta(new Date(q.market.last_close))}.` : "") +
         (q.market.next_open ? ` Opens ${dayJakarta(new Date(q.market.next_open))}.` : "");
+    }
+    if (q.status_by_browser && ["MARKET_CLOSED", "PRE_MARKET", "AFTER_HOURS"].includes(q.status) && q.source_timestamp) {
+      title += ` Last price from ${shortJakarta(new Date(q.source_timestamp))}.`;
     }
     if (q.error_message) title += (title ? " — " : "") + q.error_message;
     return { text, cls, title };

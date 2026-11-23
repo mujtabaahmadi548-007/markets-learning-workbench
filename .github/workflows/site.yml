@@ -1,6 +1,9 @@
 # Builds the website (GitHub Pages) with fresh real data and publishes it.
-# A build takes ~3-6 minutes; the `next` job then waits and starts the next build, so the site refreshes
-# about every 10 minutes. The schedule below is only a backup in case the chain stops.
+# The build job takes ~4-5 minutes. As soon as it finishes, the `next` job starts the next build while this one is
+# still publishing, so prices (data/quotes.json) refresh about every 5 minutes. Prices never wait for Gemini: they
+# are collected first, kept updating while the pages are written, and written again as the build's last step.
+# Only one build job and one publish job run at a time (job-level concurrency groups below).
+# The schedule is only a backup in case the chain stops.
 name: Build website
 
 on:
@@ -16,14 +19,13 @@ permissions:
   id-token: write
   actions: write
 
-concurrency:
-  group: website
-  cancel-in-progress: false
-
 jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    concurrency:
+      group: website-build
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v7
 
@@ -79,6 +81,9 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    concurrency:
+      group: website-deploy
+      cancel-in-progress: false
     environment:
       name: github-pages
       url: ${{ steps.try1.outputs.page_url || steps.try2.outputs.page_url || steps.try3.outputs.page_url }}
@@ -121,21 +126,24 @@ jobs:
         uses: actions/deploy-pages@v5
 
   next:
-    needs: [build, deploy]
+    needs: build
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Start the next build in a few minutes (only one chain at a time)
+      - name: Start the next build now (only one chain at a time)
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
         run: |
-          sleep 300
-          others=$(gh run list -R "$REPO" --workflow site.yml --json databaseId,status \
-            --jq "[.[] | select((.status==\"queued\" or .status==\"in_progress\" or .status==\"waiting\" or .status==\"pending\") and .databaseId != ${{ github.run_id }})] | length")
+          # A build that failed fast (e.g. a pip outage) should not start a tight loop of failing builds.
+          if [ "${{ needs.build.result }}" != "success" ]; then sleep 240; fi
+          # Older runs that are only finishing their publish job don't count; a waiting run or a newer running one
+          # (e.g. a push or the hourly backup) already continues the chain.
+          others=$(gh run list -R "$REPO" --workflow site.yml --limit 30 --json databaseId,status \
+            --jq "[.[] | select(.databaseId != ${{ github.run_id }}) | select(.status==\"queued\" or .status==\"waiting\" or .status==\"pending\" or .status==\"requested\" or (.status==\"in_progress\" and .databaseId > ${{ github.run_id }}))] | length")
           if [ "$others" = "0" ]; then
             gh workflow run site.yml -R "$REPO" --ref main && echo "next build started"
           else
-            echo "another build is already queued or running"
+            echo "another build is already waiting or running; it continues the chain"
           fi

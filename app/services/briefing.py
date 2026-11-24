@@ -93,7 +93,15 @@ class BriefingService:
                 "", "TOP STORIES:", *(lines or ["(none)"]), "", "CALENDAR (next 48 hours, times in UTC):", *(ev or ["(none)"]),
             ])
             try:
-                out, validated, watch_note, _ = await asyncio.to_thread(generate_validated, self.gemini, "briefing", prompt, BriefingWatch)
+                try:
+                    out, validated, watch_note, _ = await asyncio.to_thread(generate_validated, self.gemini, "briefing", prompt, BriefingWatch)
+                except AIDailyLimitReached:
+                    raise
+                except AIError as first:
+                    # smart model busy / out of quota / odd answer: one more try on the fast model only
+                    log.warning("Briefing: 'what to watch' failed on the smart model (%s); trying the fast model", first)
+                    out, validated, watch_note, _ = await asyncio.to_thread(
+                        generate_validated, self.gemini, "briefing_fast", prompt, BriefingWatch, tier="fast")
                 watch = out.what_to_watch[:3]  # type: ignore[attr-defined]
             except AIError as e:
                 # Google's raw error text is long and technical: keep it in the log, show a short note.

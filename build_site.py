@@ -212,11 +212,14 @@ def ai_work(st, portal, state: dict, max_tasks: int) -> None:  # noqa: ANN001
     latest = st.briefing.get()
     if now_jkt.hour >= 7 and (latest is None or latest["date"] != now_jkt.date().isoformat()):
         run("daily briefing", lambda: (portal.call(st.briefing.generate, True), "made")[1], paced=False)
-    # 1b) Today's 'what to watch' failed (AI quota or outage): try again about every 10 minutes, same stories.
-    elif latest is not None and latest["date"] == now_jkt.date().isoformat() and st.briefing.needs_watch_retry() \
-            and older_than(state, "briefing_watch_retry", 10):
-        mark(state, "briefing_watch_retry")
-        run("briefing summary retry", lambda: portal.call(st.briefing.retry_watch), paced=False)
+    # 1b) Today's 'what to watch' failed (AI quota or outage): retry with the same stories, spaced and paused
+    #     by BriefingService.watch_retry_due (10 min x3, then hourly; nothing while both models are out of quota).
+    elif latest is not None and latest["date"] == now_jkt.date().isoformat() and st.briefing.needs_watch_retry():
+        due, why = st.briefing.watch_retry_due()
+        if due:
+            run("briefing summary retry", lambda: portal.call(st.briefing.retry_watch), paced=False)
+        else:
+            say(f"AI: briefing summary retry waits ({why})")
     # 2) Tag unclear articles.
     if older_than(state, "ai_tagging", 20) and run("tagging", lambda: portal.call(st.news.ai_tag_pass)):
         mark(state, "ai_tagging")

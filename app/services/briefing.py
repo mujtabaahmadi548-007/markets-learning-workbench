@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import date
+from datetime import date, datetime
 from typing import Any
 
 from sqlalchemy import select
@@ -99,6 +99,9 @@ class BriefingService:
                     raise
                 except AIError as first:
                     # smart model busy / out of quota / odd answer: one more try on the fast model only
+                    # (not when the fast model is out of its daily quota too: that call would only fail again)
+                    if self.gemini.day_quota_used_up(self.gemini.settings.model_fast):
+                        raise
                     log.warning("Briefing: 'what to watch' failed on the smart model (%s); trying the fast model", first)
                     out, validated, watch_note, _ = await asyncio.to_thread(
                         generate_validated, self.gemini, "briefing_fast", prompt, BriefingWatch, tier="fast")
@@ -123,6 +126,28 @@ class BriefingService:
         # briefings saved before 'watch_failed' existed stored Google's raw error as "AI unavailable: ..."
         return bool(c.get("watch_failed") or str(c.get("watch_note", "")).startswith("AI unavailable"))
 
+    # Retry spacing: quick at first (a busy model usually recovers within minutes), then hourly so a bad day
+    # cannot eat the daily AI budget. While BOTH models are out of their daily quota nothing is sent at all;
+    # Google's reset (midnight Pacific = 3 PM Jakarta) clears that, and retries start again by themselves.
+    RETRY_FAST_MIN, RETRY_FAST_TIMES, RETRY_SLOW_MIN = 10, 3, 60
+
+    def watch_retry_due(self) -> tuple[bool, str]:
+        """(retry now?, reason when not)."""
+        if not self.needs_watch_retry():
+            return False, "nothing to retry"
+        c = self.get()["content"]  # type: ignore[index]
+        g = self.gemini
+        if not g.configured:
+            return False, "AI not configured"
+        if all(g.day_quota_used_up(m) for m in {g.settings.model_smart, g.settings.model_fast} if m):
+            return False, "both AI models are out of today's free quota; waiting for Google's daily reset"
+        attempts = int(c.get("watch_attempts") or 0)
+        wait = self.RETRY_FAST_MIN if attempts < self.RETRY_FAST_TIMES else self.RETRY_SLOW_MIN
+        last = c.get("watch_retry_at")
+        if last and (utcnow() - datetime.fromisoformat(last)).total_seconds() < wait * 60:
+            return False, f"next try within {wait} min"
+        return True, ""
+
     async def retry_watch(self) -> str:
         """Write the missing 'what to watch' for the newest briefing. Prices, stories and calendar stay exactly as
         they were at briefing time; only the AI summary (based on those same stories and events) is added."""
@@ -133,6 +158,8 @@ class BriefingService:
         if c.get("what_to_watch"):
             return "already written"
         c.update(await self._watch(c.get("stories") or [], c.get("events") or []))
+        c["watch_attempts"] = int(c.get("watch_attempts") or 0) + 1
+        c["watch_retry_at"] = utcnow().isoformat()
         await asyncio.to_thread(self._save, date.fromisoformat(b["date"]), c, False)
         if c["what_to_watch"]:
             return "written"

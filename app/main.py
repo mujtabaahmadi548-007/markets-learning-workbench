@@ -127,8 +127,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 return "briefing generated"
 
             async def briefing_retry_job() -> str:
-                if not state.briefing.needs_watch_retry():
-                    return "nothing to retry"
+                due, why = state.briefing.watch_retry_due()
+                if not due:
+                    return why
                 return f"briefing summary {await state.briefing.retry_watch()}"
 
             async def prune() -> str:
@@ -145,7 +146,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             sched.add("auto_breakdowns", auto_breakdown_job, trigger="interval", minutes=20, next_run_time=_soon(300))
             sched.add("calendar_refresh", calendar_job, trigger="interval", hours=12, next_run_time=_soon(20))
             sched.add("daily_briefing", briefing_job, trigger="cron", hour=7, minute=0)
-            sched.add("briefing_summary_retry", briefing_retry_job, trigger="interval", minutes=30, next_run_time=_soon(400))
+            sched.add("briefing_summary_retry", briefing_retry_job, trigger="interval", minutes=10, next_run_time=_soon(400))
             sched.add("prune_data", prune, trigger="cron", hour=3, minute=30)
             sched.start()
             state.scheduler = sched

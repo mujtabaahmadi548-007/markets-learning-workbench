@@ -267,6 +267,19 @@ blockquote { margin: 10px 0; padding: 10px 14px; border-left: 4px solid var(--bl
 .chart-wrap { position: relative; }
 .chart-legend { position: absolute; top: 6px; left: 8px; z-index: 3; pointer-events: none; font-size: 0.8rem; line-height: 1.45;
   background: rgba(255, 255, 255, 0.86); border-radius: 6px; padding: 3px 7px; max-width: calc(100% - 80px); }
+/* Briefing: a chart under any row of the prices table */
+.bc-tools { margin: 4px 0 10px; }
+.bc-btn { background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 1px 5px; cursor: pointer; font-size: 0.85rem; line-height: 1.3; }
+.bc-btn[aria-expanded="true"] { background: var(--navy-800); border-color: var(--navy-800); }
+#brief-prices tr[data-symbol] { cursor: pointer; }
+#brief-prices tr.bc-open > td { background: var(--surface-2); }
+#brief-prices tr.bc-row > td { padding: 6px 8px 12px; background: var(--surface); cursor: default; }
+/* the table scrolls sideways on phones: the chart keeps the visible width and stays in view (--bc-w set by JS) */
+.bc-row td > .bc-wrap, .bc-row td > .bc-note { position: sticky; left: 8px; width: var(--bc-w, auto); max-width: 100%; }
+.bc-wrap { position: relative; height: 260px; }
+.bc-wrap .bc-chart { position: absolute; inset: 0; }
+.bc-note { margin: 6px 0 0; }
+@media (max-width: 640px) { .bc-wrap { height: 220px; } }
 .chart-legend .lg-date { font-weight: 700; color: var(--text-1, #0F1D33); }
 .chart-legend .lg-k { color: var(--muted, #6B7A90); margin-left: 6px; }
 .chart-legend .ma50 { color: #D97706; font-weight: 700; } .chart-legend .ma200 { color: #7C3AED; font-weight: 700; }

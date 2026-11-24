@@ -24,6 +24,8 @@
   <ol>{% for w in c.what_to_watch %}<li>{{ w }}</li>{% endfor %}</ol>
   <p class="small muted">Based only on the stored stories and calendar below.
     {% if c.watch_validated %}Number check passed.{% else %}⚠ {{ c.watch_note }}{% endif %}</p>
+  {% elif c.watch_failed or (c.watch_note and c.watch_note.startswith("AI unavailable")) %}
+  <p class="muted">The AI summary could not be written {{ "yet" if live_prices else "for this briefing" }} because the free daily AI limit was reached or the AI service did not answer.{% if live_prices %} It is tried again automatically later today.{% endif %}</p>
   {% else %}<p class="muted">{{ c.watch_note or "Not enough information." }}</p>{% endif %}
 </section>
 
@@ -33,6 +35,13 @@
   <p class="small muted">Each row shows the current price from the same feed as the Dashboard, with the price stored when this
     briefing was made under it ("at briefing"). The status is worked out from the current time, the quote's own time and the
     market's hours. Crypto changes are over 24 hours; others vs the previous close or previous day.</p>
+  <div class="chart-tools bc-tools" id="bc-tools">
+    <span class="tool-name">Charts</span>
+    <span class="seg" role="group" aria-label="Chart style" id="bc-type"><button type="button" data-v="candles">Candles</button><button type="button" data-v="line">Line</button></span>
+    <span class="seg" role="group" aria-label="Chart range" id="bc-range"><button type="button" data-v="1D" title="Latest trading day, 5-minute bars">1D</button><button type="button" data-v="1W" title="One week, hourly bars">1W</button><button type="button" data-v="1M" title="One month, hourly bars">1M</button><button type="button" data-v="6M" title="Six months, daily bars">6M</button><button type="button" data-v="1Y" title="One year, daily bars">1Y</button></span>
+    <button type="button" class="btn-link" id="bc-all">Open all charts</button>
+    <span class="small muted">Tap a row or 📈 to open its chart.</span>
+  </div>
   {% else %}
   <h2>Prices at briefing time</h2>
   <p class="small muted">Real stored quotes copied when the briefing was made. Crypto changes are over 24 hours; others vs the previous close or previous day.</p>
@@ -44,8 +53,8 @@
       {% set pct = m.change_pct %}
       {% if m.currency == "%" %}{% set dir = m.change or 0 %}{% else %}{% set dir = pct if pct is not none and pct|abs >= 0.005 else 0 %}{% endif %}
       {% set live = live_prices and m.price is not none %}
-      <tr data-symbol="{{ m.symbol }}"{% if live %} data-live data-ts="{{ m.source_timestamp or '' }}"{% endif %}>
-        <td><a href="/asset/{{ m.symbol }}">{{ m.symbol }}</a> <span class="small muted">{{ m.name }}</span></td>
+      <tr data-symbol="{{ m.symbol }}" data-dec="{{ m.decimals }}"{% if live %} data-live data-ts="{{ m.source_timestamp or '' }}"{% endif %}>
+        <td>{% if live_prices %}<button type="button" class="bc-btn" aria-expanded="false" aria-label="Show the {{ m.symbol }} chart" title="Show chart">📈</button> {% endif %}<a href="/asset/{{ m.symbol }}">{{ m.symbol }}</a> <span class="small muted">{{ m.name }}</span></td>
         <td class="r num" data-f="price" data-stored="{% if m.price is not none %}{{ "{:,.{}f}".format(m.price, m.decimals) }}{% if m.currency == "%" %}%{% endif %}{% endif %}">{% if m.price is not none %}{{ "{:,.{}f}".format(m.price, m.decimals) }}{% if m.currency == "%" %}%{% endif %}{% if live %}<div class="small muted">at briefing · loading current price…</div>{% endif %}{% else %}—{% endif %}</td>
         <td class="r num {{ 'up' if dir > 0 else ('down' if dir < 0 else '') }}" data-f="change">
           {% if m.currency == "%" and m.change is not none %}{{ "{:+.2f}".format(m.change) }} pp
@@ -92,6 +101,10 @@
 </section>
 {% endblock %}
 {% block scripts %}
+{% if b and live_prices %}
+<script src="{{ static_url('vendor/lightweight-charts.standalone.production.js') }}"></script>
+<script src="{{ static_url('js/briefing-charts.js') }}"></script>
+{% endif %}
 <script>
 (function () {
   const M = window.MLW, gen = document.getElementById("gen");

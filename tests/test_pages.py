@@ -56,8 +56,11 @@ def test_briefing_live_prices_only_on_newest_briefing() -> None:
         st.briefing._save(date(2026, 11, 20), content)
         st.briefing._save(date(2026, 11, 21), content)
         newest = c.get("/briefing").text
-        assert '<tr data-symbol="BTC" data-live data-ts="2026-11-21T08:06:37+00:00">' in newest
-        assert '<tr data-symbol="SPX" data-live data-ts="2026-11-20T21:35:54+00:00">' in newest
+        assert '<tr data-symbol="BTC" data-dec="2" data-live data-ts="2026-11-21T08:06:37+00:00">' in newest
+        assert '<tr data-symbol="SPX" data-dec="2" data-live data-ts="2026-11-20T21:35:54+00:00">' in newest
+        # charts (candles or line) under any row of the newest briefing only
+        assert 'id="bc-tools"' in newest and 'data-v="line">Line</button>' in newest and "js/briefing-charts.js" in newest
+        assert newest.count('class="bc-btn"') == 3
         assert 'title="FRED ends on 19 Nov."' in newest and 'data-stored="6,910.39"' in newest
         # the briefing-time status is labelled as such, never shown as the current status
         assert "at briefing: MARKET CLOSED" in newest and "Prices now and at briefing time" in newest
@@ -65,6 +68,36 @@ def test_briefing_live_prices_only_on_newest_briefing() -> None:
         assert c.get("/briefing?day=2026-11-21").text.count(" data-live data-ts=") == 3
         older = c.get("/briefing?day=2026-11-20").text
         assert " data-live data-ts=" not in older and "Prices at briefing time" in older
+        assert 'id="bc-tools"' not in older and "briefing-charts.js" not in older
+
+
+def test_briefing_ai_failure_shows_short_note_and_retries_only_the_summary() -> None:
+    """Google's raw quota error is never shown; a later retry adds only 'what to watch', keeping the briefing's
+    prices, stories and time exactly as they were."""
+    import asyncio
+    from datetime import date
+
+    get_settings.cache_clear()
+    raw = ("AI unavailable: Gemini rate limit or daily quota reached. HTTP 429: You exceeded your current quota, "
+           "please check your plan and billing details.")
+    content = {"generated_at": "2026-11-24T00:03:54+00:00", "stories": [], "events": [], "review": [],
+               "moves": [{"symbol": "BTC", "name": "Bitcoin", "decimals": 2, "currency": "USD", "price": 61236.21,
+                          "change_pct": 1.0, "status": "LIVE", "source": "Binance", "kind": "stream",
+                          "source_timestamp": "2026-11-24T00:03:50+00:00"}],
+               "what_to_watch": [], "watch_note": raw, "watch_validated": True}
+    with TestClient(create_app()) as c:
+        st = c.app.state.mlw
+        st.briefing._save(date(2026, 11, 24), content)
+        page = c.get("/briefing").text
+        assert "exceeded your current quota" not in page and "HTTP 429" not in page
+        assert "free daily AI limit was reached" in page and "tried again automatically later today" in page
+        assert st.briefing.needs_watch_retry()
+        before = st.briefing.get()
+        assert asyncio.run(st.briefing.retry_watch()) == "still unavailable"  # tests run without a key
+        after = st.briefing.get()
+        assert after["content"]["moves"] == content["moves"] and after["created_at"] == before["created_at"]
+        assert after["content"]["watch_note"] == "Not enough information: no stored stories or calendar events yet."
+        assert not st.briefing.needs_watch_retry()  # not an AI failure, so no more retries
 
 
 def test_ai_endpoints_explain_missing_key() -> None:

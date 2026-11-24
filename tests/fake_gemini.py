@@ -20,6 +20,7 @@ class FakeGemini:
         self.replies: list[Any] = []  # queued JSON replies (dict or callable(prompt) -> dict), used in order
         self.prompts: list[str] = []
         self.fail_models: set[str] = set()  # models that answer HTTP 500 (to test the overload fallback)
+        self.day_quota_models: set[str] = set()  # models whose free per-day quota is used up (HTTP 429)
         self.text_reply = "OK"
         handler = self._make_handler()
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
@@ -78,6 +79,14 @@ class FakeGemini:
                 if fake.mode == "429":
                     self._send(429, {"error": {"code": 429, "message": "Resource has been exhausted", "status": "RESOURCE_EXHAUSTED",
                                                "details": [{"@type": "type.googleapis.com/google.rpc.RetryInfo", "retryDelay": "3600s"}]}})
+                    return
+                if any(m in self.path for m in fake.day_quota_models):
+                    # wording of Google's real free-tier answer (Nov 2026)
+                    self._send(429, {"error": {"code": 429, "status": "RESOURCE_EXHAUSTED", "message":
+                        "You exceeded your current quota. * Quota exceeded for metric: generativelanguage.googleapis.com/"
+                        "generate_content_free_tier_requests, limit: 20, model: gemini-3.8-flash, description: Generate "
+                        "content requests per day limit exceeded on Free Tier. Please retry in 7h56m5s.",
+                        "details": [{"@type": "type.googleapis.com/google.rpc.RetryInfo", "retryDelay": "28565s"}]}})
                     return
                 if fake.mode == "500" or any(m in self.path for m in fake.fail_models):
                     self._send(500, {"error": {"code": 500, "message": "internal", "status": "INTERNAL"}})

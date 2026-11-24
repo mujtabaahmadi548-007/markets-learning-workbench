@@ -97,6 +97,29 @@ def test_overloaded_smart_model_falls_back_to_fast(tmp_path: Path, monkeypatch, 
     assert [c.success for c in calls] == [False, True]
 
 
+def test_smart_model_out_of_daily_quota_uses_fast_and_remembers(tmp_path: Path, monkeypatch, fake_gemini) -> None:
+    """Free-tier quotas are per model: when the smart one is used up for the day, the fast one finishes the job,
+    and later calls (even from a new process, e.g. the next website build) go straight to the fast model."""
+    svc = make_service(tmp_path, monkeypatch, fake_gemini)
+    fake_gemini.day_quota_models = {"gemini-3.8-flash:"}
+    res = svc.generate("briefing", "q", tier="smart")
+    assert res.model == "gemini-3.5-flash-lite" and res.text == "OK"
+    assert svc.day_quota_used_up("gemini-3.8-flash") and not svc.day_quota_used_up("gemini-3.5-flash-lite")
+    n = len(fake_gemini.requests)
+    fresh = GeminiService(svc.settings, svc.db)  # a new process reads the call log
+    assert fresh.generate("why", "q", tier="smart").model == "gemini-3.5-flash-lite"
+    assert len(fake_gemini.requests) == n + 1 and "gemini-3.5-flash-lite:" in fake_gemini.requests[-1]["path"]
+    # an explicitly chosen model is never swapped
+    with pytest.raises(AIQuotaExceeded):
+        svc.generate("x", "q", model="gemini-3.8-flash")
+
+
+def test_per_minute_429_is_not_a_daily_quota(tmp_path: Path, monkeypatch, fake_gemini) -> None:
+    from app.ai.gemini_client import is_daily_quota_error
+    assert not is_daily_quota_error("HTTP 429: Resource has been exhausted (requests per minute)")
+    assert is_daily_quota_error("HTTP 429: ... description: Generate content requests per day limit exceeded on Free Tier.")
+
+
 def test_daily_limit_blocks_before_calling(tmp_path: Path, monkeypatch, fake_gemini) -> None:
     svc = make_service(tmp_path, monkeypatch, fake_gemini, limit=1)
     svc.generate("x", "q", tier="fast")

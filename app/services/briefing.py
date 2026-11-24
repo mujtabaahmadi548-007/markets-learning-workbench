@@ -17,7 +17,7 @@ from typing import Any
 
 from sqlalchemy import select
 
-from app.ai.gemini_client import AIError
+from app.ai.gemini_client import AIDailyLimitReached, AIError, AIQuotaExceeded
 from app.ai.schemas import BriefingWatch
 from app.ai.validator import generate_validated
 from app.models.tables import Briefing
@@ -68,7 +68,17 @@ class BriefingService:
                     log.warning("Briefing: breakdown for %d skipped: %s", st["id"], e)
                     break
         events = await asyncio.to_thread(self.calendar.upcoming, 48, 0)
-        watch, watch_note, validated = [], "", True
+        content = {
+            "generated_at": utcnow().isoformat(), "moves": moves, "stories": stories, "events": events,
+            "review": await asyncio.to_thread(self.learning.review_sample, 3),
+        }
+        content.update(await self._watch(stories, events))
+        await asyncio.to_thread(self._save, today, content)
+        return self.get(today)  # type: ignore[return-value]
+
+    async def _watch(self, stories: list[dict[str, Any]], events: list[dict[str, Any]]) -> dict[str, Any]:
+        """'What to watch today' from the briefing's own stories and calendar (never newer ones)."""
+        watch, watch_note, validated, failed = [], "", True, False
         if not stories and not events:
             watch_note = "Not enough information: no stored stories or calendar events yet."
         elif not self.gemini.configured:
@@ -86,19 +96,44 @@ class BriefingService:
                 out, validated, watch_note, _ = await asyncio.to_thread(generate_validated, self.gemini, "briefing", prompt, BriefingWatch)
                 watch = out.what_to_watch[:3]  # type: ignore[attr-defined]
             except AIError as e:
-                watch_note = f"AI unavailable: {e}"
-        content = {
-            "generated_at": utcnow().isoformat(), "moves": moves, "stories": stories, "events": events,
-            "what_to_watch": watch, "watch_note": watch_note, "watch_validated": validated,
-            "review": await asyncio.to_thread(self.learning.review_sample, 3),
-        }
-        await asyncio.to_thread(self._save, today, content)
-        return self.get(today)  # type: ignore[return-value]
+                # Google's raw error text is long and technical: keep it in the log, show a short note.
+                log.warning("Briefing: 'what to watch' failed: %s", e)
+                failed = True
+                watch_note = ("The AI summary could not be written yet because the free daily AI limit was reached. "
+                              "It is tried again automatically later today." if isinstance(e, AIQuotaExceeded | AIDailyLimitReached)
+                              else "The AI summary could not be written yet (the AI service did not answer). "
+                                   "It is tried again automatically later today.")
+        return {"what_to_watch": watch, "watch_note": watch_note, "watch_validated": validated, "watch_failed": failed,
+                "watch_at": utcnow().isoformat()}
 
-    def _save(self, day: date, content: dict[str, Any]) -> None:
+    def needs_watch_retry(self) -> bool:
+        """True when the newest briefing's 'what to watch' failed because of the AI (quota, outage)."""
+        b = self.get()
+        if b is None or b["content"].get("what_to_watch"):
+            return False
+        c = b["content"]
+        # briefings saved before 'watch_failed' existed stored Google's raw error as "AI unavailable: ..."
+        return bool(c.get("watch_failed") or str(c.get("watch_note", "")).startswith("AI unavailable"))
+
+    async def retry_watch(self) -> str:
+        """Write the missing 'what to watch' for the newest briefing. Prices, stories and calendar stay exactly as
+        they were at briefing time; only the AI summary (based on those same stories and events) is added."""
+        b = self.get()
+        if b is None:
+            return "no briefing"
+        c = dict(b["content"])
+        if c.get("what_to_watch"):
+            return "already written"
+        c.update(await self._watch(c.get("stories") or [], c.get("events") or []))
+        await asyncio.to_thread(self._save, date.fromisoformat(b["date"]), c, False)
+        return "written" if c["what_to_watch"] else "still unavailable"
+
+    def _save(self, day: date, content: dict[str, Any], touch: bool = True) -> None:
         with self.db.session() as s:
             b = s.scalar(select(Briefing).where(Briefing.date == day))
             if b is None:
                 s.add(Briefing(date=day, json_content=content, created_at=utcnow()))
             else:
-                b.json_content, b.created_at = content, utcnow()
+                b.json_content = content
+                if touch:  # a later summary retry keeps the briefing's own time
+                    b.created_at = utcnow()

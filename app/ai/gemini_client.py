@@ -58,6 +58,12 @@ class AIResult:
     parsed: BaseModel | None = None
 
 
+def is_daily_quota_error(text: str | None) -> bool:
+    """A 429 caused by the per-DAY quota (not the per-minute rate limit), judged from Google's message."""
+    t = (text or "").lower()
+    return "429" in t and ("per day" in t or "perday" in t or "daily" in t)
+
+
 def _retry_delay_seconds(err: Any) -> float | None:
     """Read Google's suggested wait ('retryDelay': '27s') from a 429 error, if present."""
     try:
@@ -154,10 +160,23 @@ class GeminiService:
         return out
 
     def _switch_to_fast(self, tier: Tier, explicit_model: str | None, current: str) -> bool:
-        """When the smart model is overloaded, finish the job with the fast model instead of waiting minutes.
-        The model actually used is stored with every result, so the switch is visible."""
+        """When the smart model is overloaded or out of quota, finish the job with the fast model instead of
+        waiting or failing. The model actually used is stored with every result, so the switch is visible."""
         fast = self.settings.model_fast
         return tier == "smart" and explicit_model is None and bool(fast) and current != fast
+
+    def day_quota_used_up(self, model: str) -> bool:
+        """True when Google already refused `model` today because its free PER-DAY quota is used up.
+
+        Free-tier quotas are per model (gemini-3.6-flash allowed 20 requests a day in Nov 2026), so the fast
+        model usually still works. Read from the call log, because every website build is a new process."""
+        if self.db is None:
+            return False
+        with self.db.session() as s:
+            errs = s.scalars(select(AICall.error).where(
+                AICall.created_at >= gemini_day_start(), AICall.model == model, AICall.success.is_(False),
+                AICall.error.like("HTTP 429%"))).all()
+        return any(is_daily_quota_error(e) for e in errs)
 
     def generate(
         self,
@@ -175,6 +194,10 @@ class GeminiService:
 
         client = self._client()
         model_name = model or self.resolve_model(tier)
+        if self._switch_to_fast(tier, model, model_name) and self.day_quota_used_up(model_name):
+            log.info("Gemini %s is out of its daily free quota; using the fast model %s for %s", model_name,
+                     self.settings.model_fast, purpose)
+            model_name = self.settings.model_fast
 
         cfg: dict[str, Any] = {"system_instruction": system, "temperature": temperature}
         if schema is not None:
@@ -199,6 +222,11 @@ class GeminiService:
                     if attempt <= max_retries and wait is not None and wait <= 30:
                         log.warning("Gemini 429, waiting %.0fs then retrying (%s)", wait, purpose)
                         time.sleep(wait + 1)
+                        continue
+                    if self._switch_to_fast(tier, model, model_name):
+                        log.warning("Gemini %s quota reached (%s); using the fast model %s for %s", model_name, msg,
+                                    self.settings.model_fast, purpose)
+                        model_name = self.settings.model_fast
                         continue
                     raise AIQuotaExceeded(f"Gemini rate limit or daily quota reached. {msg}") from None
                 raise AIError(f"Gemini rejected the request. {msg}") from None

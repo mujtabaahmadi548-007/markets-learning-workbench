@@ -43,7 +43,7 @@
     }
   }
   function loadUi() {
-    const d = { type: "candles", ind: { vol: true, ma20: true, ma50: false, ema20: false, bb: false, rsi: true }, gtf: "5m" };
+    const d = { type: "candles", ind: { vol: true, ma20: true, ma50: false, ema20: false, bb: false, rsi: true }, gtf: "5m", gtype: "candles" };
     try { const u = JSON.parse(localStorage.getItem(UIKEY) || "{}"); return { ...d, ...u, ind: { ...d.ind, ...(u.ind || {}) } }; } catch (e) { return d; }
   }
   function saveUi() { try { localStorage.setItem(UIKEY, JSON.stringify(ui)); } catch (e) { /* not important */ } }
@@ -321,6 +321,7 @@
       this.redraw(true);
       if (d.provider === "binance") hub.sub(this, d.symbol, tf);
     }
+    type() { const t = this.mini ? ui.gtype : ui.type; return t === "line" || t === "area" ? t : "candles"; }
     stop() { this.token++; hub.unsub(this); }
     destroy() { this.stop(); this.chart.remove(); if (this.rsiChart) this.rsiChart.remove(); }
     clearSeries() {
@@ -331,14 +332,18 @@
       const d = this.data, p = this.p;
       if (!d || !p) return;
       this.clearSeries();
-      const cs = d.candles, type = this.mini ? "candles" : ui.type, dec = p.decimals ?? 2;
+      const cs = d.candles, type = this.type(), dec = p.decimals ?? 2;
       const pf = { type: "price", precision: dec, minMove: 1 / 10 ** dec };
       const showVol = !this.mini && ui.ind.vol && cs.some((c) => c.volume > 0);
       if (type === "candles") {
         this.series.main = this.chart.addCandlestickSeries({ upColor: COL.up, downColor: COL.down, borderVisible: false, wickUpColor: COL.up, wickDownColor: COL.down, priceFormat: pf });
         this.series.main.setData(cs);
       } else {
-        this.series.main = this.chart.addAreaSeries({ lineColor: COL.entry, topColor: "rgba(29,78,216,0.18)", bottomColor: "rgba(29,78,216,0.01)", lineWidth: 2, priceFormat: pf });
+        // Line / area of the closing prices; green when the shown period is up, red when it is down.
+        const up = cs.length < 2 || cs[cs.length - 1].close >= cs[0].close, col = up ? COL.up : COL.down;
+        this.series.main = type === "area"
+          ? this.chart.addAreaSeries({ lineColor: col, topColor: up ? "rgba(22,163,74,0.22)" : "rgba(220,38,38,0.2)", bottomColor: "rgba(255,255,255,0)", lineWidth: 2, priceFormat: pf })
+          : this.chart.addLineSeries({ color: col, lineWidth: this.mini ? 1.5 : 2, priceFormat: pf });
         this.series.main.setData(cs.map((c) => ({ time: c.time, value: c.close })));
       }
       this.series.main.priceScale().applyOptions({ scaleMargins: { top: 0.08, bottom: showVol ? 0.24 : 0.08 } });
@@ -413,7 +418,7 @@
       const cs = this.data.candles, c = cs[cs.length - 1];
       if (!c || !this.series.main) return;
       try {
-        this.series.main.update((this.mini ? "candles" : ui.type) === "candles" ? c : { time: c.time, value: c.close });
+        this.series.main.update(this.type() === "candles" ? c : { time: c.time, value: c.close });
         if (this.series.vol) this.series.vol.update({ time: c.time, value: c.volume || 0, color: c.close >= c.open ? "rgba(22,163,74,0.35)" : "rgba(220,38,38,0.35)" });
       } catch (e) { this.redraw(false); return; }
       if (!this.mini) this.indicators(true);
@@ -769,6 +774,10 @@
   }));
   document.querySelectorAll('input[name="ctype"]').forEach((r) => r.addEventListener("change", () => { ui.type = r.value; saveUi(); if (mainView) mainView.redraw(); }));
   document.querySelectorAll("#ind input").forEach((c) => c.addEventListener("change", () => { ui.ind[c.value] = c.checked; saveUi(); if (mainView) mainView.redraw(false); }));
+  document.querySelectorAll('input[name="gtype"]').forEach((r) => {
+    r.checked = r.value === (ui.gtype || "candles");
+    r.addEventListener("change", () => { ui.gtype = r.value; saveUi(); for (const [, g] of gridViews) g.view.redraw(false); });
+  });
   document.querySelectorAll('input[name="gtf"]').forEach((r) => {
     r.checked = r.value === ui.gtf;
     r.addEventListener("change", () => { ui.gtf = r.value; saveUi(); for (const [id, g] of gridViews) { const p = findPos(id); if (p) g.view.show(p, ui.gtf); } });

@@ -95,11 +95,17 @@
   <!-- All trades side by side -->
   <div class="term-view" id="view-all" hidden>
     <div class="term-grid-head">
-      <p class="small muted" id="grid-note">All your open trades side by side, each with a live 5-minute candle chart. Tap a card's title to open its full chart.</p>
+      <p class="small muted" id="grid-note">All your open trades side by side, each with a live chart (candles or a line of the closes). Tap a card's title to open its full chart.</p>
+      <div class="term-toolbar">
+      <div class="seg seg-sm" role="radiogroup" aria-label="Mini chart type" id="grid-type">
+        <label><input type="radio" name="gtype" value="candles" checked> <span>Candles</span></label>
+        <label><input type="radio" name="gtype" value="line"> <span>Line</span></label>
+      </div>
       <div class="seg seg-sm" role="radiogroup" aria-label="Mini chart timeframe" id="grid-tf">
         <label><input type="radio" name="gtf" value="1m"> <span>1m</span></label>
         <label><input type="radio" name="gtf" value="5m" checked> <span>5m</span></label>
         <label><input type="radio" name="gtf" value="1h"> <span>1h</span></label>
+      </div>
       </div>
     </div>
     <div class="term-grid" id="grid"></div>
@@ -121,6 +127,7 @@
           <div class="seg seg-sm" role="radiogroup" aria-label="Chart type" id="ctype">
             <label><input type="radio" name="ctype" value="candles"> <span>Candles</span></label>
             <label><input type="radio" name="ctype" value="line"> <span>Line</span></label>
+            <label><input type="radio" name="ctype" value="area"> <span>Area</span></label>
           </div>
           <div class="ind-chips" id="ind" aria-label="Indicators">
             <label class="ind"><input type="checkbox" value="vol"> Volume</label>

@@ -93,7 +93,8 @@ def test_briefing_ai_failure_shows_short_note_and_retries_only_the_summary() -> 
         assert "free daily AI limit was reached" in page and "tried again automatically later today" in page
         assert st.briefing.needs_watch_retry()
         before = st.briefing.get()
-        assert asyncio.run(st.briefing.retry_watch()) == "still unavailable"  # tests run without a key
+        # tests run without a key; the reason goes to the build log
+        assert asyncio.run(st.briefing.retry_watch()) == "still unavailable (Not enough information: no stored stories or calendar events yet.)"
         after = st.briefing.get()
         assert after["content"]["moves"] == content["moves"] and after["created_at"] == before["created_at"]
         assert after["content"]["watch_note"] == "Not enough information: no stored stories or calendar events yet."

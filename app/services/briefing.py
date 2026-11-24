@@ -78,7 +78,7 @@ class BriefingService:
 
     async def _watch(self, stories: list[dict[str, Any]], events: list[dict[str, Any]]) -> dict[str, Any]:
         """'What to watch today' from the briefing's own stories and calendar (never newer ones)."""
-        watch, watch_note, validated, failed = [], "", True, False
+        watch, watch_note, validated, failed, error = [], "", True, False, ""
         if not stories and not events:
             watch_note = "Not enough information: no stored stories or calendar events yet."
         elif not self.gemini.configured:
@@ -98,13 +98,13 @@ class BriefingService:
             except AIError as e:
                 # Google's raw error text is long and technical: keep it in the log, show a short note.
                 log.warning("Briefing: 'what to watch' failed: %s", e)
-                failed = True
+                failed, error = True, f"{type(e).__name__}: {str(e)[:200]}"  # AIError texts are already redacted
                 watch_note = ("The AI summary could not be written yet because the free daily AI limit was reached. "
                               "It is tried again automatically later today." if isinstance(e, AIQuotaExceeded | AIDailyLimitReached)
                               else "The AI summary could not be written yet (the AI service did not answer). "
                                    "It is tried again automatically later today.")
         return {"what_to_watch": watch, "watch_note": watch_note, "watch_validated": validated, "watch_failed": failed,
-                "watch_at": utcnow().isoformat()}
+                "watch_error": error, "watch_at": utcnow().isoformat()}
 
     def needs_watch_retry(self) -> bool:
         """True when the newest briefing's 'what to watch' failed because of the AI (quota, outage)."""
@@ -126,7 +126,9 @@ class BriefingService:
             return "already written"
         c.update(await self._watch(c.get("stories") or [], c.get("events") or []))
         await asyncio.to_thread(self._save, date.fromisoformat(b["date"]), c, False)
-        return "written" if c["what_to_watch"] else "still unavailable"
+        if c["what_to_watch"]:
+            return "written"
+        return f"still unavailable ({c['watch_error'] or c['watch_note']})"
 
     def _save(self, day: date, content: dict[str, Any], touch: bool = True) -> None:
         with self.db.session() as s:

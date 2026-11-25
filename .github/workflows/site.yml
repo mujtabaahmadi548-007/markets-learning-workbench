@@ -11,7 +11,8 @@ on:
   push:
     branches: [main]
   schedule:
-    - cron: "17 * * * *"
+    # Backup only, twice an hour: if the chain ever stops, prices are stale for at most ~30 min (plus GitHub's delay).
+    - cron: "17,47 * * * *"
 
 permissions:
   contents: read
@@ -138,12 +139,31 @@ jobs:
         run: |
           # A build that failed fast (e.g. a pip outage) should not start a tight loop of failing builds.
           if [ "${{ needs.build.result }}" != "success" ]; then sleep 240; fi
+          # Nov 2026: one GitHub API hiccup here (exit 1 after 7 s) stopped the 5-minute chain until the backup
+          # cron. Every API call is now retried; only a dispatch that keeps failing for ~4 minutes fails the run.
+          retry() {
+            local i
+            for i in 1 2 3 4 5 6; do
+              if "$@"; then return 0; fi
+              echo "::warning::'$1 $2 $3' failed (try $i of 6), waiting $((i * 10)) s"
+              sleep $((i * 10))
+            done
+            return 1
+          }
           # Older runs that are only finishing their publish job don't count; a waiting run or a newer running one
           # (e.g. a push or the hourly backup) already continues the chain.
-          others=$(gh run list -R "$REPO" --workflow site.yml --limit 30 --json databaseId,status \
-            --jq "[.[] | select(.databaseId != ${{ github.run_id }}) | select(.status==\"queued\" or .status==\"waiting\" or .status==\"pending\" or .status==\"requested\" or (.status==\"in_progress\" and .databaseId > ${{ github.run_id }}))] | length")
-          if [ "$others" = "0" ]; then
-            gh workflow run site.yml -R "$REPO" --ref main && echo "next build started"
+          count_others() {
+            others=$(gh run list -R "$REPO" --workflow site.yml --limit 30 --json databaseId,status \
+              --jq "[.[] | select(.databaseId != ${{ github.run_id }}) | select(.status==\"queued\" or .status==\"waiting\" or .status==\"pending\" or .status==\"requested\" or (.status==\"in_progress\" and .databaseId > ${{ github.run_id }}))] | length")
+          }
+          others=""
+          if ! retry count_others; then
+            echo "::warning::could not list the other builds; starting the next one anyway (a duplicate only waits its turn)"
+            others=0
+          fi
+          if [ "${others:-0}" = "0" ]; then
+            retry gh workflow run site.yml -R "$REPO" --ref main
+            echo "next build started"
           else
-            echo "another build is already waiting or running; it continues the chain"
+            echo "another build is already waiting or running ($others); it continues the chain"
           fi
